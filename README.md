@@ -1,7 +1,8 @@
 # MultiAgentProgrammingContest
 Contest for MAPC 2020 using Python. Include agent and some modules such us an implementation of EISMASSIM for communicate with server.
 
-###Initial Structure
+Initial Structure
+---
 Each agent consist in a group of modules:
 -   Agent: Is the main module and unify a group of ones who let it perform some actions. 
 
@@ -11,7 +12,8 @@ Each agent consist in a group of modules:
   
 -   CommonStructures: Provide JSON structures and variables used by each agent, some of them have default value, like server hosts.
 
-###The Multi Agent Programming Contest
+The Multi Agent Programming Contest
+---
 This competition is an attempt to stimulate research in the area of multi-agent system development and programming. Two teams of multi-agents look for the victory just performing actions to make complex forms with boxes and delivering to a goal area. The team who got more points at the end of the match wins.
 
 More information about the competition [here.](https://multiagentcontest.org/)
