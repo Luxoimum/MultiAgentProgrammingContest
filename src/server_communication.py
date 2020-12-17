@@ -1,22 +1,17 @@
 import socket
-import multiprocessing
 import json
 from exceptions.not_response_exception import NotResponseException
 
 end = b'\0'
 
 
-class ServerCommunication(multiprocessing.Process):
+class ServerCommunication:
     def __init__(self, buffer_manager, conf, auth):
-        multiprocessing.Process.__init__(self)
-        self.buffer_manager = buffer_manager()
+        self.buffer_manager = buffer_manager
         self.conf = conf
         self.auth = auth
         self.s = None
         self.buffer = b''
-        self.__connect()
-        while True:
-            self.__handle_step_connection()
 
     def __connect(self):
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -30,7 +25,7 @@ class ServerCommunication(multiprocessing.Process):
             if c != -1:
                 response = self.buffer[:c].decode()
             self.buffer = b''
-
+        print('[server communication]')
         print(response)
 
     def __handle_step_connection(self):
@@ -41,10 +36,18 @@ class ServerCommunication(multiprocessing.Process):
         c = self.buffer.find(end)
         if c != -1:
             response = self.buffer[:c].decode()
+            print('[server communication]')
             print(response)
             self.buffer = b''
             self.buffer_manager.write_percept(response)
 
+    def connect(self, action=None):
+        if action is not None:
+            self.s.send(json.dumps(action).encode() + end)
+        else:
+            self.__connect()
 
+        while self.buffer_manager.percept_buffer.empty():
+            self.__handle_step_connection()
 
 
