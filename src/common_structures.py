@@ -19,6 +19,12 @@ class CommonStructures:
                 "p": None
             }
         }
+        self.SKIP_ACTION = {
+            "type": "action",
+            "content": {
+                "type": None,
+            }
+        }
         self.MOVE = 0
         self.SKIP = 1
         self.ATTACH = 2
@@ -43,5 +49,18 @@ class CommonStructures:
             "clear",
             "accept"
         ]
+
+    def action(self, id=None, action_type=None, params=None):
+        if id is not None and params is not None:
+            content = self.ACTION['content']
+            content['id'] = id
+            content['type'] = action_type
+            content['p'] = params
+            print(self.ACTION)
+            return self.ACTION
+        else:
+            content = self.SKIP_ACTION['content']
+            content['type'] = action_type
+            return self.SKIP_ACTION
 
 
