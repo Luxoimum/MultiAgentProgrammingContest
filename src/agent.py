@@ -5,6 +5,7 @@ from multiprocessing import Process
 import json
 import time
 
+
 class Agent:
     def __init__(self, name):
         self.bm = BufferManager()
@@ -20,19 +21,16 @@ class Agent:
                 print(response)
                 response = json.loads(response)
                 print('=======================')
-                print(response['type'])
                 if response['type'] == 'request-action':
                     id = response['content']['id']
                     percept = response['content']['percept']
                     action = self.cm.action(id, 'move', ['n'])
-                    self.sc.connect(action)
-                else:
-                    action = self.cm.action(action_type='skip')
-                    self.sc.connect(action)
+                    self.sc.send(action)
             else:
                 print('response is None')
             time.sleep(3.5)
+            self.sc.pol()
 
 
-Agent("agentA2")
+Agent("agentA1")
 

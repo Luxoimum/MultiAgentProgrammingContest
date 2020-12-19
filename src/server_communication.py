@@ -41,13 +41,13 @@ class ServerCommunication:
             self.buffer = b''
             self.buffer_manager.write_percept(response)
 
-    def connect(self, action=None):
-        if action is not None:
-            self.s.send(json.dumps(action).encode() + end)
-        else:
-            self.__connect()
+    def connect(self):
+        self.__connect()
 
+    def send(self, action):
+        self.s.send(json.dumps(action).encode() + end)
+
+    def pol(self):
         while self.buffer_manager.percept_buffer.empty():
             self.__handle_step_connection()
-
 
