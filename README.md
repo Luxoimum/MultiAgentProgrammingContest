@@ -1,7 +1,28 @@
 # MultiAgentProgrammingContest
 Contest for MAPC 2020 using Python. Include agent and some modules such us an implementation of EISMASSIM for communicate with server.
 
-Initial Structure
+Starting
+---
+Once upon you started the server you can start playing by executing the file "main.py" located in "/src". Several flags are available:
+
+-   "--team-size": (integer) The number of agents playing the game.
+-   "--team-id": (char) The main character of a team, it can be "A" or "B".
+
+Example:
+
+    (venv) project_root/src>python main.py --team-size 15 --team-id A 
+
+Notice that we must execute "main.py" into a virtual environment after being executed the following sentence:
+
+    pip install -r requirements.txt
+
+Requirements:
+---
+-   Python ^3.6
+-   Pip ^10.0.1
+
+
+Agent Structure
 ---
 Each agent consist in a group of modules:
 -   Agent: Is the main module and unify a group of ones who let it perform some actions. 

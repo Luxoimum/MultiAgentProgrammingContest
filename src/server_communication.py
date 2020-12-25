@@ -36,8 +36,6 @@ class ServerCommunication:
         c = self.buffer.find(end)
         if c != -1:
             response = self.buffer[:c].decode()
-            print('[server communication]')
-            print(response)
             self.buffer = b''
             self.buffer_manager.write_percept(response)
 
