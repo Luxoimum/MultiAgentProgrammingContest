@@ -17,11 +17,11 @@ def main(argv=None):
     args_dictionary = {}
 
     for arg in range(len(argv)):
-        if '--' in args[arg]:
-            args_dictionary[args[arg]] = argv[arg + 1]
+        if '--' in argv[arg]:
+            args_dictionary[argv[arg]] = argv[arg + 1]
 
     if TEAM_SIZE in args_dictionary:
-        team_size = args_dictionary[TEAM_SIZE]
+        team_size = int(args_dictionary[TEAM_SIZE])
 
     if TEAM_ID in args_dictionary:
         team_id = args_dictionary[TEAM_ID]
