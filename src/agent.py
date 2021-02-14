@@ -1,7 +1,8 @@
-from server_communication import ServerCommunication
-from buffer_manager import BufferManager
-from common_structures import CommonStructures
-from exploration_module import ExplorationModule
+from modules.server_communication import ServerCommunication
+from modules.buffer_manager import BufferManager
+from modules.common_structures import CommonStructures
+from modules.exploration import Exploration
+from modules.agent_state import AgentState
 import json
 import time
 
@@ -9,28 +10,36 @@ import time
 class Agent:
     def __init__(self, name, queue=None):
         self.q = queue
-        self.bm = BufferManager()
-        self.cm = CommonStructures(name)
-        self.em = ExplorationModule()
-        self.sc = ServerCommunication(self.bm, self.cm.CONF, self.cm.AUTH)
-        self.sc.connect()
+        self.coords = {
+            'n': (1, 0),
+            's': (-1, 0),
+            'w': (0, -1),
+            'e': (0, 1),
+        }
+        self.state = AgentState()
+        self.buffer = BufferManager()
+        self.structures = CommonStructures(name)
+        self.exploration = Exploration()
+        self.server = ServerCommunication(self.buffer, self.structures.CONF, self.structures.AUTH)
+        self.server.connect()
         while True:
-            response = self.bm.read_percept()
+            response = json.loads(self.buffer.read_percept() or '{"type": "None"}')
             print('[agent]')
-            if response is not None:
-                response = json.loads(response)
-                print(json.dumps(response, indent=2))
-                print('=======================')
-                if response['type'] == 'request-action':
-                    request_action_id = response['content']['id']
-                    percept = response['content']['percept']
-                    if 'obstacle' in json.dumps(percept):
-                        self.em.update_map(obstacles=percept['terrain']['obstacle'])
-                    print(self.em.get_action())
-                    action = self.cm.action(request_action_id, 'move', [self.em.get_action()])
-                    self.sc.send(action)
-            else:
-                print('response is None')
+            #print(json.dumps(response, indent=2))
+            if response['type'] == 'request-action':
+                request_action_id = response['content']['id']
+                perception = response['content']['percept']
+                self.exploration.analize(perception)
+                self.state.update_map(self.exploration.map)
+
+                action_selected = self.exploration.get_action()
+                self.state.update_position(self.coords[action_selected])
+
+                action = self.structures.get_action_structure(request_action_id, 'move', [action_selected])
+                self.server.send(action)
+
             time.sleep(3.5)
-            self.sc.pol()
+            self.server.pol()
+
+
 

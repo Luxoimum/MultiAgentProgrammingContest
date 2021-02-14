@@ -1,3 +1,5 @@
+import numpy as np
+
 class CommonStructures:
     def __init__(self, name):
         self.CONF = {
@@ -50,7 +52,7 @@ class CommonStructures:
             "accept"
         ]
 
-    def action(self, id=None, action_type=None, params=None):
+    def get_action_structure(self, id=None, action_type=None, params=None):
         if id is not None and params is not None:
             content = self.ACTION['content']
             content['id'] = id
