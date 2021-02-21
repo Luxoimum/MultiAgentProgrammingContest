@@ -32,7 +32,9 @@ class ServerCommunication:
         try:
             self.buffer += self.s.recv(8192)
         except NotResponseException:
-            pass
+            print('[server communication]')
+            print('no response from server')
+        pass
         c = self.buffer.find(end)
         if c != -1:
             response = self.buffer[:c].decode()

@@ -30,6 +30,7 @@ class Agent:
                 request_action_id = response['content']['id']
                 perception = response['content']['percept']
                 self.exploration.analize(perception)
+                print(self.exploration.map)
                 self.state.update_map(self.exploration.map)
 
                 action_selected = self.exploration.get_action()

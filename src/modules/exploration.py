@@ -23,12 +23,10 @@ class Exploration:
         for i in range(len(obstacles)):
             self.map[obstacles[i][1]+5, obstacles[i][0]+5] = -1
 
-        for i in range(len(things)):
-            if things[i]['type'] == 'entity':
-                if things[i]['x'] == 0 and things[i]['y'] == 0:
-                    self.map[things[i]['y']+5, things[i]['x']+5] = 0
-                else:
-                    self.map[things[i]['y']+5, things[i]['x']+5] = -1
+        for thing in things:
+            if thing['type'] == 'entity':
+                if thing['x'] != 0 or thing['y'] != 0:
+                    self.map[thing['y']+5, thing['x']+5] = -1
 
     def get_action(self):
         grid_in_front = {

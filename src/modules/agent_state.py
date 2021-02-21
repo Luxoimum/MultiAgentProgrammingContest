@@ -7,6 +7,7 @@ class AgentState:
         self.global_map = np.zeros(map_size)
         self.position = tuple(int(i/2) for i in map_size)
         self.radius = vision_radius
+        self.number_of_renders = 0
 
     def update_map(self, partial_map):
         y, x = tuple(p - self.radius for p in self.position)
@@ -23,7 +24,19 @@ class AgentState:
             x, y = np.where(np.rot90(self.global_map, 3) != 0)
             area = np.ones(x.size)*15
             plt.scatter(x, y, c='salmon', marker='s', s=area)
-            plt.savefig('map.png')
+            plt.savefig('map' + str(self.number_of_renders) + '.png')
+            self.number_of_renders += 1
 
     def update_position(self, updated_position):
-        self.position = tuple(p + updated_position[i] for i, p in enumerate(self.position))
+        y, x = updated_position
+        movement = {
+            '01': [*[i for i in range(1, len(self.global_map))], 0],
+            '0-1': [len(self.global_map)-1, *[i for i in range(0, len(self.global_map)-1)]],
+            '10': [*[i for i in range(1, len(self.global_map))], 0],
+            '-10': [len(self.global_map)-1, *[i for i in range(0, len(self.global_map)-1)]],
+        }
+        if y == 0:
+            self.global_map = self.global_map[:, movement[str(y)+str(x)]]
+        else:
+            self.global_map = self.global_map[movement[str(y)+str(x)], :]
+
