@@ -5,6 +5,7 @@ from multiprocessing import Process, Queue
 
 TEAM_SIZE = "--team-size"
 TEAM_ID = "--team-name"
+AGENT_ID = "--agent-id"
 
 
 def play_game(agent_name, q=None):
@@ -14,6 +15,7 @@ def play_game(agent_name, q=None):
 def main(argv=None):
     team_id = 'A'
     team_size = 15
+    agent_id = None
     args_dictionary = {}
 
     for arg in range(len(argv)):
@@ -26,7 +28,10 @@ def main(argv=None):
     if TEAM_ID in args_dictionary:
         team_id = args_dictionary[TEAM_ID]
 
-    agents_name = ['agent' + team_id + str(i) for i in range(1, team_size + 1)]
+    if AGENT_ID in args_dictionary:
+        agent_id = args_dictionary[AGENT_ID] if team_size == 1 else None
+
+    agents_name = ['agent' + team_id + str(agent_id or i) for i in range(1, team_size + 1)]
     agents = []
     q = Queue()
     print('[MAIN]')

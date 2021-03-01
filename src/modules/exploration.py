@@ -11,22 +11,28 @@ class Exploration:
         self.action = self.movements[np.random.randint(4)]
         print(self.action)
 
-    def analize(self, perception):
+    def get_map(self, perception):
         obstacles = perception['terrain']['obstacle'] if 'obstacle' in perception['terrain'] else []
         things = perception['things']
-
-        self._update_map(obstacles, things)
-
-    def _update_map(self, obstacles, things):
-        self.map = np.matrix(np.zeros((11, 11)))
+        prev_map = np.matrix(np.zeros((11, 11)))
 
         for i in range(len(obstacles)):
-            self.map[obstacles[i][1]+5, obstacles[i][0]+5] = -1
+            prev_map[obstacles[i][1]+5, obstacles[i][0]+5] = 1
 
         for thing in things:
             if thing['type'] == 'entity':
                 if thing['x'] != 0 or thing['y'] != 0:
-                    self.map[thing['y']+5, thing['x']+5] = -1
+                    prev_map[thing['y']+5, thing['x']+5] = 2
+
+        is_equal = None
+
+        if np.count_nonzero(prev_map) > 0:
+            is_equal = np.array_equal(self.map, prev_map)
+
+        if not is_equal:
+            self.map = prev_map
+
+        return self.map if not is_equal else []
 
     def get_action(self):
         grid_in_front = {
