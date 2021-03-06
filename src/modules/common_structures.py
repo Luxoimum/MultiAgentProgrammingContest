@@ -58,7 +58,6 @@ class CommonStructures:
             content['id'] = id
             content['type'] = action_type
             content['p'] = params
-            print(self.ACTION)
             return self.ACTION
         else:
             content = self.SKIP_ACTION['content']

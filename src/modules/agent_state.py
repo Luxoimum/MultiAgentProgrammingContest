@@ -23,7 +23,6 @@ class AgentState:
         plt.savefig('map' + str(self.number_of_renders) + '.png')
         self.number_of_renders += 1
 
-
     def update_position(self, updated_position):
         y, x = updated_position
         prev_y, prev_x = self.position
