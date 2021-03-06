@@ -6,7 +6,10 @@ Starting
 Once upon you started the server you can start playing by executing the file "main.py" located in "/src". Several flags are available:
 
 -   "--team-size": (integer) The number of agents playing the game.
--   "--team-id": (char) The main character of a team, it can be "A" or "B".
+-   "--team-name": (char) The main character of a team, it can be "A" or "B".
+-   "--agent-id": (integer) The id of the agent you want to wake up. 
+    
+    NOTE: "--agent-id" works only when "--team-size" == 1
 
 Example:
 
@@ -18,8 +21,8 @@ Notice that we must execute "main.py" into a virtual environment after being exe
 
 Requirements:
 ---
--   Python ^3.6
--   Pip ^10.0.1
+-   Python ^3.8
+-   Pip ^21.0.1
 
 
 Agent Structure
