@@ -22,10 +22,8 @@ class CommonStructures:
             }
         }
         self.SKIP_ACTION = {
-            "type": "action",
-            "content": {
-                "type": None,
-            }
+            "type": "status-request",
+            "content": {}
         }
         self.MOVE = 0
         self.SKIP = 1
@@ -60,8 +58,6 @@ class CommonStructures:
             content['p'] = params
             return self.ACTION
         else:
-            content = self.SKIP_ACTION['content']
-            content['type'] = action_type
             return self.SKIP_ACTION
 
 

@@ -46,10 +46,7 @@ class ServerCommunication:
 
     def send(self, action):
         if action:
-            response = self.s.send(json.dumps(action).encode() + end)
-            print('[response]')
-            print(action)
-            print(response)
+            self.s.send(json.dumps(action).encode() + end)
 
     def pol(self):
         while self.buffer_manager.percept_buffer.empty():

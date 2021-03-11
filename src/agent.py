@@ -4,16 +4,16 @@ from modules.common_structures import CommonStructures
 from modules.exploration import Exploration
 from multiprocessing import shared_memory
 import numpy as np
-import matplotlib.pyplot as plt
 import json
 
 
 class Agent:
-    def __init__(self, name, state=None, shared_map_id=None, position=None):
+    def __init__(self, agent_id, name, state=None, shared_map=None):
+        self.agent_id = agent_id
         self.name = name
         self.state = state
-        self.shared_map_id = shared_map_id
-        self.position = position
+        self.shared_map_id = shared_map['map_id']
+        self.shared_map = shared_map
         self.number_of_renders = 0
 
     def play_slave(self):
@@ -25,15 +25,15 @@ class Agent:
         action_selected = None
         while True:
             response = json.loads(buffer.read_percept() or '{"type": "None"}')
-            print('[agent]')
             #print(json.dumps(response, indent=2))
-            action = None
             if response['type'] == 'request-action':
                 request_action_id = response['content']['id']
                 perception = response['content']['percept']
-                updated_map = exploration.get_map(perception)
+                self.state['entities'] = self._get_entities(perception)
 
+                updated_map = exploration.get_map(perception)
                 if len(updated_map) > 0:
+                    self.state['perception'] = updated_map
                     self._update_map(self.shared_map_id, updated_map)
                     action_selected = exploration.get_action()
                     movements_options = {
@@ -59,7 +59,8 @@ class Agent:
         map_shape = global_map.shape
         padding = map_shape[0]-len(partial_map)
 
-        y, x = tuple(p - 5 for p in self.position)
+        y = self.shared_map['y'] - 5
+        x = self.shared_map['x'] - 5
         map_padded = np.pad(partial_map, ((0, padding), (0, padding)), mode='constant')
         map_padded = np.roll(map_padded, y, axis=0)
         map_padded = np.roll(map_padded, x, axis=1)
@@ -68,12 +69,14 @@ class Agent:
 
         global_map[mask] = map_padded[mask]
 
-        plt.imshow(global_map, interpolation='nearest')
-        plt.savefig('img/' + self.name + '_map_' + str(self.number_of_renders) + '.png')
-        self.number_of_renders += 1
-
     def _update_position(self, updated_position):
         y, x = updated_position
-        prev_y, prev_x = self.position
-        self.position[0] = prev_y + y
-        self.position[1] = prev_x + x
+        self.shared_map['y'] += y
+        self.shared_map['x'] += x
+
+    @staticmethod
+    def _get_entities(perception):
+        entities = list(filter(lambda th: th['type'] == 'entity', perception['things']))
+        entities = list(filter(lambda th: th['x'] != 0 or th['y'] != 0, entities))
+
+        return list(map(lambda e: (e['y'], e['x']), entities))
