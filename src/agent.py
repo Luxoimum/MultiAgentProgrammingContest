@@ -12,9 +12,8 @@ class Agent:
         self.agent_id = agent_id
         self.name = name
         self.state = state
-        self.shared_map_id = shared_map['map_id']
-        self.shared_map = shared_map
-        self.number_of_renders = 0
+        if shared_map:
+            self.shared_map = shared_map
 
     def play_slave(self):
         buffer = BufferManager()
@@ -34,7 +33,7 @@ class Agent:
                 updated_map = exploration.get_map(perception)
                 if len(updated_map) > 0:
                     self.state['perception'] = updated_map
-                    self._update_map(self.shared_map_id, updated_map)
+                    self._update_map(updated_map)
                     action_selected = exploration.get_action()
                     movements_options = {
                         'n': (-1, 0),
@@ -49,12 +48,40 @@ class Agent:
 
             server.pol()
 
-    def play_master(self):
-        pass
+    def play_master(self, global_state):
+        g_map = global_state['maps']
+        states = global_state['states']
+        # Trying to synchronize perceptions of each agent in an unique global map
+        while True:
+            # Walk through agent states looking for entities in his perception
+            relationships = {}
+            for a in states:
+                if 'entities' in states[a] and len(states[a]['entities']) > 0:
+                    # Store potential relationships and entities associated value in a hashmap
+                    for e in states[a]['entities']:
+                        relationship = str(abs(e[0]))+str(abs(e[1]))
+                        relationships[relationship] = [*relationships.get(relationship, []), (a, e)]
+                        # For each relationship try to synchronize pairs of agents
+                        entities = relationships[relationship]
+                        if len(entities) == 2:
+                            current = entities.pop(0)
+                            target = entities.pop(0)
+                            # TODO: discard known relationships before start while loop
+                            if g_map[current[0]]['map_id'] != g_map[target[0]]['map_id']:
+                                current_map = g_map[current[0]]['map_id']
+                                target_map = g_map[target[0]]['map_id']
+                                target_position = target[1]
+                                # Check if both agents are in the same perception
+                                self._try_synchronize_map(current_map, target_map, target_position)
+                                # Update target agent
+                                global_state['maps'][target[0]]['y'] = (global_state['maps'][current[0]]['y'] + current[1][0]) % 70
+                                global_state['maps'][target[0]]['x'] = (global_state['maps'][current[0]]['x'] + current[1][1]) % 70
+                                global_state['maps'][target[0]]['map_id'] = global_state['maps'][current[0]]['map_id']
+                                # TODO: Update all maps related with target agent so all agents can see each other
 
-    def _update_map(self, shared_map_id, partial_map):
+    def _update_map(self, partial_map):
         void_map = np.zeros((70, 70))
-        shm_m = shared_memory.SharedMemory(name=shared_map_id)
+        shm_m = shared_memory.SharedMemory(name=self.shared_map['map_id'])
         global_map = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_m.buf)
         map_shape = global_map.shape
         padding = map_shape[0]-len(partial_map)
@@ -71,8 +98,8 @@ class Agent:
 
     def _update_position(self, updated_position):
         y, x = updated_position
-        self.shared_map['y'] += y
-        self.shared_map['x'] += x
+        self.shared_map['y'] = (self.shared_map['y'] + y) % 70
+        self.shared_map['x'] = (self.shared_map['x'] + x) % 70
 
     @staticmethod
     def _get_entities(perception):
@@ -80,3 +107,20 @@ class Agent:
         entities = list(filter(lambda th: th['x'] != 0 or th['y'] != 0, entities))
 
         return list(map(lambda e: (e['y'], e['x']), entities))
+
+    @staticmethod
+    def _try_synchronize_map(shared_map_id, shared_map_to_merge_id, position):
+        void_map = np.zeros((70, 70))
+        # Get shared memory of both maps
+        shm_m_1 = shared_memory.SharedMemory(name=shared_map_id)
+        map_1 = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_m_1.buf)
+        shm_m_2 = shared_memory.SharedMemory(name=shared_map_to_merge_id)
+        map_2 = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_m_2.buf)
+
+        # roll map to merge with
+        map_2 = np.roll(map_2, position[0], axis=0)
+        map_2 = np.roll(map_2, position[1], axis=1)
+
+        mask = map_2 > 0
+
+        map_1[mask] = map_2[mask]

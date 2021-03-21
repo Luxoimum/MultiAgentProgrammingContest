@@ -1,9 +1,10 @@
 import sys
 from agent import Agent
-from multiprocessing import Process, shared_memory, Array, Manager
+from multiprocessing import Process, shared_memory, Manager
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import colors
 import json
 
 
@@ -14,81 +15,53 @@ AGENT_IDS = "--agent-ids"
 CONFIG = "--config-file"
 
 
-def play_game(agent_id, agent_name, state, shared_map, rol):
+def play_master(agent_id, agent_name, global_state):
+    a = Agent(agent_id, agent_name)
+    a.play_master(global_state)
+
+
+def play_slave(agent_id, agent_name, state, shared_map):
     a = Agent(agent_id, agent_name, state, shared_map)
-
-    if rol == 'slave':
-        a.play_slave()
-    else:
-        a.play_master()
+    a.play_slave()
 
 
-def master(global_state):
+def debugger(global_state, quiet=False):
     g_map = global_state['maps']
-    states = global_state['states']
-    number_of_renders = {}
+    renders_per_agent = {}
     while True:
-        edges = {}
-        for a in states:
-            if 'entities' in states[a] and len(states[a]['entities']) > 0:
-                for e in states[a]['entities']:
-                    key = str(abs(e[0]))+str(abs(e[1]))
-                    edges[key] = [*edges.get(key, []), (a, e)]
-
-        for edge in edges:
-            queue = [m for m in edges[edge]]
-            while len(queue) > 1:
-                current = queue.pop(0)
-                target = queue.pop(0)
-                if g_map[current[0]]['map_id'] != g_map[target[0]]['map_id']:
-                    update_map(g_map[current[0]]['map_id'], g_map[target[0]]['map_id'], target[1])
-                    global_state['maps'][target[0]]['y'] = global_state['maps'][current[0]]['y'] + current[1][0]
-                    global_state['maps'][target[0]]['x'] = global_state['maps'][current[0]]['x'] + current[1][1]
-                    global_state['maps'][target[0]]['map_id'] = global_state['maps'][current[0]]['map_id']
-
+        debug_map(g_map, renders_per_agent, quiet)
         time.sleep(3.5)
-        debug_map(g_map, number_of_renders)
 
 
-def debug_map(global_map, number_of_renders):
-    print('[debug_map]')
-    print([m for m in global_map])
-    for m in global_map:
-        print(m + ': ' + global_map[m]['map_id'])
-        number_of_renders[m] = number_of_renders.get(m, 0) + 1
-        shm_map = shared_memory.SharedMemory(name=global_map[m]['map_id'])
+def debug_map(global_map, number_of_renders, quiet):
+    not quiet and print('[debug_map]')
+    for agent in global_map:
+        # Copy agent shared map into our image
+        not quiet and print(agent + ': ' + global_map[agent]['map_id'])
+        shm_map = shared_memory.SharedMemory(name=global_map[agent]['map_id'])
         void_map = np.zeros((70, 70))
         new_map = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_map.buf)
-        positions = np.zeros((70, 70))
-        positions[:] = new_map[:]
+        image = np.zeros((70, 70))
+        image[:] = new_map[:]
 
-        # get agents with same map so it can be printed together
-        for agent in global_map:
-            if global_map[m]['map_id'] == global_map[agent]['map_id']:
-                positions[global_map[agent]['y'], global_map[agent]['x']] = 100
-                print(agent, global_map[agent]['y'], global_map[agent]['x'])
+        # Agents with same map_id must appear at the same map
+        for a in global_map:
+            if global_map[agent]['map_id'] == global_map[a]['map_id']:
+                image[global_map[a]['y'], global_map[a]['x']] = 100
 
-        plt.imshow(positions, interpolation='nearest')
-        plt.savefig('img/' + m + '_map_' + str(number_of_renders[m]) + '.png')
-
-    time.sleep(3.5)
-
-
-def update_map(shared_map_id, shared_map_to_merge_id, position):
-    void_map = np.zeros((70, 70))
-    # Get shared memory of both maps
-    shm_m_1 = shared_memory.SharedMemory(name=shared_map_id)
-    map_1 = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_m_1.buf)
-    shm_m_2 = shared_memory.SharedMemory(name=shared_map_to_merge_id)
-    map_2 = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_m_2.buf)
-
-    # roll map to merge with
-    map_2 = np.roll(map_2, position[0], axis=0)
-    map_2 = np.roll(map_2, position[1], axis=1)
-
-    mask = map_2 > 0
-
-    map_1[mask] = map_2[mask]
+        # Set params and save an image in png of the map
+        cmap = colors.ListedColormap([(0.186, 0.186, 0.186),
+                                      (0.91, 0.91, 0.91),
+                                      (0.26, 0.26, 0.26),
+                                      'blue'])
+        bounds = [0, 0.9, 9, 99, 200]
+        norm = colors.BoundaryNorm(bounds, cmap.N)
+        plt.imshow(image,
+                   interpolation='nearest',
+                   cmap=cmap,
+                   norm=norm)
+        number_of_renders[agent] = number_of_renders.get(agent, 0) + 1
+        plt.savefig('img/' + global_map[agent]['map_id'] + '_map_' + str(number_of_renders[agent]) + '.png')
 
 
 def main(argv=None):
@@ -138,36 +111,43 @@ def main(argv=None):
 
     for i, a in enumerate(agents_name):
         print('Process: ' + a)
-
         if a == 'master':
-            agents.append(Process(
-                target=master,
-                args=(global_state,)
+            # Create master agent instance
+            # (this one do not interact with anything else but global_state)
+            agents.append(Process(target=play_master, args=(
+                0,
+                a,
+                global_state)
             ))
         else:
+            # Create a new empty map for this agent
             void_map = np.zeros(map_size)
             global_state['maps_shm'][a] = shared_memory.SharedMemory(name='map_' + a, create=True, size=void_map.nbytes)
             new_map = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=global_state['maps_shm'][a].buf)
             new_map[:] = void_map[:]
 
+            # Allocate shared memory, shared memory pointer, and position of this agent
             single_map = manager.dict()
             single_map['map_id'] = global_state['maps_shm'][a].name
             single_map['y'] = int(map_size[0]/2)
             single_map['x'] = int(map_size[1]/2)
             global_state['maps'][a] = single_map
 
+            # Allocate space for agent internal states
             single_state = manager.dict()
             global_state['states'][a] = single_state
-            agents.append(Process(
-                target=play_game,
-                args=(
-                    agent_ids[i],
-                    a,
-                    global_state['states'][a],
-                    global_state['maps'][a],
-                    'slave'
-                )
+
+            # Create agent instance
+            agents.append(Process(target=play_slave, args=(
+                agent_ids[i],
+                a,
+                global_state['states'][a],
+                global_state['maps'][a])
             ))
+
+        # Raise up a single Process to debug global_state
+        if i == len(agents_name)-1:
+            agents.append(Process(target=debugger, args=(global_state,)))
 
     for a in agents:
         a.start()

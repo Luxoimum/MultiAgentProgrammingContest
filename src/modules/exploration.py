@@ -22,8 +22,6 @@ class Exploration:
         for i in range(len(obstacles)):
             prev_map[obstacles[i][1]+5, obstacles[i][0]+5] = 10
 
-
-
         is_equal = None
         prev_map_mask = prev_map > 1
         if np.any(prev_map_mask):
@@ -45,23 +43,23 @@ class Exploration:
         return self.obstacles_map if not is_equal else []
 
     def get_action(self):
-        grid_in_front = {
+        movement_position = {
             'n': self.map[4, 5],
             's': self.map[6, 5],
             'w': self.map[5, 4],
             'e': self.map[5, 6]
         }
 
-        if grid_in_front[self.action] == 1:
+        if movement_position[self.action] == 1:
             return self.action
         else:
-            coords = [self.map[4, 5], self.map[6, 5], self.map[5, 4], self.map[5, 6]]
             options = []
             for i in range(4):
-                if coords[i] == 1:
+                if movement_position[self.movements[i]] == 1:
                     options.append(i)
 
             self.action = self.movements[options[np.random.randint(len(options))]]
+
             return self.action
 
     @staticmethod
