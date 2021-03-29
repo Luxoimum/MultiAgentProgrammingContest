@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import json
+from modules.agent_state import AgentState
 
 
 TEAM_SIZE = "--team-size"
@@ -16,18 +17,20 @@ CONFIG = "--config-file"
 
 
 def play_master(agent_id, agent_name, global_state):
-    a = Agent(agent_id, agent_name)
-    a.play_master(global_state)
+    a = Agent(agent_id, agent_name, global_state)
+    print('master', id(global_state.maps['agentA1']))
+    a.play_master()
 
 
-def play_slave(agent_id, agent_name, state, shared_map):
-    a = Agent(agent_id, agent_name, state, shared_map)
+def play_slave(agent_id, agent_name, state):
+    a = Agent(agent_id, agent_name, state)
     a.play_slave()
 
 
 def debugger(global_state, quiet=False):
-    g_map = global_state['maps']
+    g_map = global_state.maps
     renders_per_agent = {}
+    print('debugger', id(global_state.maps['agentA1']))
     while True:
         debug_map(g_map, renders_per_agent, quiet)
         time.sleep(3.5)
@@ -38,11 +41,8 @@ def debug_map(global_map, number_of_renders, quiet):
     for agent in global_map:
         # Copy agent shared map into our image
         not quiet and print(agent + ': ' + global_map[agent]['map_id'])
-        shm_map = shared_memory.SharedMemory(name=global_map[agent]['map_id'])
-        void_map = np.zeros((70, 70))
-        new_map = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_map.buf)
         image = np.zeros((70, 70))
-        image[:] = new_map[:]
+        image[:] = global_map[agent]['map'][:]
 
         # Agents with same map_id must appear at the same map
         for a in global_map:
@@ -70,6 +70,7 @@ def main(argv=None):
     agent_id = None
     args_dictionary = {}
     config = {}
+    agent_states = AgentState()
 
     for arg in range(len(argv)):
         if TEAM_SIZE in argv[arg]:
@@ -97,15 +98,6 @@ def main(argv=None):
     agents_name.append('master')
     agents = []
 
-    global_state = {
-        'states': {},
-        'maps': {},
-        'maps_shm': {}
-    }
-
-    map_size = (70, 70)
-    manager = Manager()
-
     print('[MAIN]')
     print('args:', args_dictionary)
 
@@ -117,37 +109,24 @@ def main(argv=None):
             agents.append(Process(target=play_master, args=(
                 0,
                 a,
-                global_state)
+                agent_states)
             ))
         else:
-            # Create a new empty map for this agent
-            void_map = np.zeros(map_size)
-            global_state['maps_shm'][a] = shared_memory.SharedMemory(name='map_' + a, create=True, size=void_map.nbytes)
-            new_map = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=global_state['maps_shm'][a].buf)
-            new_map[:] = void_map[:]
-
-            # Allocate shared memory, shared memory pointer, and position of this agent
-            single_map = manager.dict()
-            single_map['map_id'] = global_state['maps_shm'][a].name
-            single_map['y'] = int(map_size[0]/2)
-            single_map['x'] = int(map_size[1]/2)
-            global_state['maps'][a] = single_map
-
-            # Allocate space for agent internal states
-            single_state = manager.dict()
-            global_state['states'][a] = single_state
+            # Add agent to global state
+            agent_states.add_agent_state(a)
 
             # Create agent instance
             agents.append(Process(target=play_slave, args=(
                 agent_ids[i],
                 a,
-                global_state['states'][a],
-                global_state['maps'][a])
+                agent_states)
             ))
 
         # Raise up a single Process to debug global_state
         if i == len(agents_name)-1:
-            agents.append(Process(target=debugger, args=(global_state,)))
+            agents.append(Process(target=debugger, args=(agent_states,)))
+
+    print('main', id(agent_states.maps['agentA1']))
 
     for a in agents:
         a.start()
