@@ -73,11 +73,24 @@ class Agent:
                                 target_position = target[1]
                                 # Check if both agents are in the same perception
                                 self._try_synchronize_map(current_map, target_map, target_position)
-                                # Update target agent
+                                # First of all store old position
+                                old_target_y = global_state['maps'][target[0]]['y']
+                                old_target_x = global_state['maps'][target[0]]['x']
+                                ols_map_id = global_state['maps'][target[0]]['map_id']
+                                # Next update target agent
                                 global_state['maps'][target[0]]['y'] = (global_state['maps'][current[0]]['y'] + current[1][0]) % 70
                                 global_state['maps'][target[0]]['x'] = (global_state['maps'][current[0]]['x'] + current[1][1]) % 70
                                 global_state['maps'][target[0]]['map_id'] = global_state['maps'][current[0]]['map_id']
                                 # TODO: Update all maps related with target agent so all agents can see each other
+                                # Substract old position the new one
+                                old_target_y = old_target_y - global_state['maps'][target[0]]['y']
+                                old_target_x = old_target_x - global_state['maps'][target[0]]['x']
+                                # Then search agents with old map_id and substitute for new one and new position
+                                for a in g_map:
+                                    if g_map[a]['map_id'] == ols_map_id:
+                                        global_state['maps'][a]['y'] = (global_state['maps'][a]['y'] - old_target_y) % 70
+                                        global_state['maps'][a]['x'] = (global_state['maps'][a]['x'] - old_target_x) % 70
+                                        global_state['maps'][a]['map_id'] = global_state['maps'][current[0]]['map_id']
 
     def _update_map(self, partial_map):
         void_map = np.zeros((70, 70))
