@@ -15,8 +15,8 @@ class ServerCommunication:
 
     def __connect(self):
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.settimeout(10)
         self.s.connect((self.conf['host'], self.conf['port']))
-        self.s.settimeout(5.00)
         self.s.send(json.dumps(self.auth).encode() + end)
         response = None
         while response is None:
@@ -24,31 +24,30 @@ class ServerCommunication:
             c = self.buffer.find(end)
             if c != -1:
                 response = self.buffer[:c].decode()
-            self.buffer = b''
-        print('[server communication]')
-        print(response)
-
-    def __handle_step_connection(self):
-        try:
-            self.buffer += self.s.recv(8192)
-        except NotResponseException:
-            print('[server communication]')
-            print('no response from server')
-        pass
-        c = self.buffer.find(end)
-        if c != -1:
-            response = self.buffer[:c].decode()
-            self.buffer = b''
-            self.buffer_manager.write_percept(response)
+                self.buffer = b''
+        #print('[server communication]', response)
 
     def connect(self):
         self.__connect()
 
-    def send(self, action):
-        if action:
-            self.s.send(json.dumps(action).encode() + end)
+    def send(self, action, debug=False):
+        self.s.send(json.dumps(action).encode() + end)
+        return self.receive(debug)
 
-    def pol(self):
-        while self.buffer_manager.percept_buffer.empty():
-            self.__handle_step_connection()
+    def receive(self, debug=False):
+        response = None
+        while not response:
+            try:
+                self.buffer += self.s.recv(8192)
+            except NotResponseException:
+                print('[server communication]', 'no response from server')
+                pass
+            c = self.buffer.find(end)
+            if c != -1:
+                response = self.buffer[:c].decode()
+                self.buffer = b''
+                debug and print('[server communication]', 'response', response)
+                self.buffer_manager.write_percept(response)
+
+        return response
 

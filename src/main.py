@@ -34,10 +34,9 @@ def debugger(global_state, quiet=False):
 
 
 def debug_map(global_map, number_of_renders, quiet):
-    not quiet and print('[debug_map]')
     for agent in global_map:
         # Copy agent shared map into our image
-        not quiet and print(agent + ': ' + global_map[agent]['map_id'])
+        not quiet and print('[DEBUG_MAP]', agent + ': ' + global_map[agent]['map_id'])
         shm_map = shared_memory.SharedMemory(name=global_map[agent]['map_id'])
         void_map = np.zeros((70, 70))
         new_map = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_map.buf)
@@ -106,11 +105,10 @@ def main(argv=None):
     map_size = (70, 70)
     manager = Manager()
 
-    print('[MAIN]')
-    print('args:', args_dictionary)
+    print('[MAIN]', 'args:', args_dictionary)
 
     for i, a in enumerate(agents_name):
-        print('Process: ' + a)
+        print('[MAIN]', 'Process: ' + a)
         if a == 'master':
             # Create master agent instance
             # (this one do not interact with anything else but global_state)
