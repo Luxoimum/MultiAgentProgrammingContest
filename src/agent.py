@@ -41,6 +41,7 @@ class Agent:
                 # Update state of the agent
                 self.state['entities'] = self._get_entities(perception)
                 self.state['dispenser'] = self._get_dispensers(perception)
+                self.state['taskboard'] = self._get_taskboards(perception)
 
                 updated_map = exploration.get_map(perception)
                 action_selected = exploration.get_action(perception)
@@ -78,7 +79,7 @@ class Agent:
                         current_map = g_map[current[0]]['map_id']
                         target_map = g_map[target[0]]['map_id']
                         target_position = target[1]
-                        matched = self._try_synchronize_map(current_map, target_map, target_position, True)
+                        matched = self._try_synchronize_map(current_map, target_map, target_position)
                         if matched:
                             # First of all store old position
                             old_target_y = global_state['maps'][target[0]]['y']
@@ -140,6 +141,12 @@ class Agent:
         entities = list(filter(lambda th: th['type'] == 'dispenser', perception['things']))
 
         return list(map(lambda e: (e['y'], e['x'], e['details']), entities))
+
+    @staticmethod
+    def _get_taskboards(perception):
+        entities = list(filter(lambda th: th['type'] == 'taskboard', perception['things']))
+
+        return list(map(lambda e: (e['y'], e['x']), entities))
 
     @staticmethod
     def _try_synchronize_map(shared_map_id, shared_map_to_merge_id, position, debug=False):

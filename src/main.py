@@ -29,38 +29,45 @@ def debugger(global_state, quiet=False):
     g_map = global_state['maps']
     renders_per_agent = {}
     while True:
-        debug_map(g_map, renders_per_agent, quiet)
-        time.sleep(3.5)
+        maps = {}
+        for a in g_map:
+            if g_map[a]['map_id'] not in maps:
+                maps[g_map[a]['map_id']] = [a]
+            else:
+                maps[g_map[a]['map_id']].append(a)
+
+        debug_map(maps, g_map, renders_per_agent, quiet)
+        time.sleep(1)
 
 
-def debug_map(global_map, number_of_renders, quiet):
-    for agent in global_map:
-        # Copy agent shared map into our image
-        not quiet and print('[DEBUG_MAP]', agent + ': ' + global_map[agent]['map_id'])
-        shm_map = shared_memory.SharedMemory(name=global_map[agent]['map_id'])
-        void_map = np.zeros((70, 70))
-        new_map = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_map.buf)
-        image = np.zeros((70, 70))
-        image[:] = new_map[:]
+def debug_map(maps, global_map, number_of_renders, quiet):
+    for single_map in maps:
+        if len(maps[single_map]) > 1:
+            # Copy agent shared map into our image
+            not quiet and print('[DEBUG_MAP]: ', single_map, maps[single_map])
+            shm_map = shared_memory.SharedMemory(name=single_map)
+            void_map = np.zeros((70, 70))
+            new_map = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=shm_map.buf)
+            image = np.zeros((70, 70))
+            image[:] = new_map[:]
 
-        # Agents with same map_id must appear at the same map
-        for a in global_map:
-            if global_map[agent]['map_id'] == global_map[a]['map_id']:
-                image[global_map[a]['y'], global_map[a]['x']] = 100
+            # Agents with same map_id must appear at the same map
+            for agent in maps[single_map]:
+                image[global_map[agent]['y'], global_map[agent]['x']] = 100
 
-        # Set params and save an image in png of the map
-        cmap = colors.ListedColormap([(0.186, 0.186, 0.186),
-                                      (0.91, 0.91, 0.91),
-                                      (0.26, 0.26, 0.26),
-                                      'blue'])
-        bounds = [0, 0.9, 9, 99, 200]
-        norm = colors.BoundaryNorm(bounds, cmap.N)
-        plt.imshow(image,
-                   interpolation='nearest',
-                   cmap=cmap,
-                   norm=norm)
-        number_of_renders[agent] = number_of_renders.get(agent, 0) + 1
-        plt.savefig('img/' + global_map[agent]['map_id'] + '_map_' + str(number_of_renders[agent]) + '.png')
+            # Set params and save an image in png of the map
+            cmap = colors.ListedColormap([(0.186, 0.186, 0.186),
+                                          (0.91, 0.91, 0.91),
+                                          (0.26, 0.26, 0.26),
+                                          'blue'])
+            bounds = [0, 0.9, 9, 99, 200]
+            norm = colors.BoundaryNorm(bounds, cmap.N)
+            plt.imshow(image,
+                       interpolation='nearest',
+                       cmap=cmap,
+                       norm=norm)
+            number_of_renders[single_map] = number_of_renders.get(single_map, 0) + 1
+            plt.savefig('img/' + single_map + '_map_' + str(number_of_renders[single_map]) + '.png')
 
 
 def main(argv=None):
@@ -143,9 +150,7 @@ def main(argv=None):
                 global_state['maps'][a])
             ))
 
-        # Raise up a single Process to debug global_state
-        if i == len(agents_name)-1:
-            agents.append(Process(target=debugger, args=(global_state,)))
+
 
     for a in agents:
         a.start()

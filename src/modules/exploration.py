@@ -13,30 +13,17 @@ class Exploration:
 
     def get_map(self, perception):
         obstacles = perception['terrain']['obstacle'] if 'obstacle' in perception['terrain'] else []
-        things = perception['things']
+        goal = perception['terrain']['goal'] if 'goal' in perception['terrain'] else []
         perception_map = np.matrix(np.zeros((11, 11)))
         perception_map = self._fill_diamond(perception_map)
 
         # Obstacles in the view has 10 as its value
-        for i in range(len(obstacles)):
-            perception_map[obstacles[i][1]+5, obstacles[i][0]+5] = 10
+        for obstacle in obstacles:
+            perception_map[obstacle[1]+5, obstacle[0]+5] = 10
 
-        # Check for useful things in the map
-        # for thing in things:
-        #    if thing['type'] == 'dispenser':
-        #        perception_map[thing['y']+5, thing['x']+5] = 50 + int(thing['details'][1])
-
-        # Check if perception_map is not empty
-        #perception_map_mask = perception_map > 1
-        #if np.any(perception_map_mask):
-        #    # Check if perception_map and last_map are equals
-        #    is_equal = np.array_equal(
-        #        self.perception_map[perception_map_mask],
-        #        perception_map[perception_map_mask]
-        #    )
-        #    if not is_equal:
-        #        self.perception_map[:] = perception_map[:]
-        #        return self.perception_map
+        # Goal area in the view has 5 as its value
+        for gcell in goal:
+            perception_map[gcell[1]+5, gcell[0]+5] = 5
 
         return perception_map
 
@@ -55,7 +42,7 @@ class Exploration:
             'e': perception_map[5, 6] == 1
         }
         # Check if we can continue moving
-        if available_moves[self.last_action]:
+        if self.last_action in available_moves and available_moves[self.last_action]:
             return self.last_action
         else:
             available_indexes = []
@@ -64,8 +51,11 @@ class Exploration:
                     available_indexes.append(i)
 
             # Set a new random move
-            random_index = np.random.randint(len(available_indexes))
-            self.last_action = [m for m in available_moves][random_index]
+            if len(available_indexes) > 0:
+                random_index = available_indexes[np.random.randint(len(available_indexes))]
+                self.last_action = [m for m in available_moves][random_index]
+            else:
+                self.last_action = None
 
             return self.last_action
 
