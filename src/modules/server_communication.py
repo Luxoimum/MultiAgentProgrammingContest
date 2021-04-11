@@ -13,7 +13,7 @@ class ServerCommunication:
         self.s = None
         self.buffer = b''
 
-    def __connect(self):
+    def connect(self):
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.settimeout(10)
         self.s.connect((self.conf['host'], self.conf['port']))
@@ -25,14 +25,14 @@ class ServerCommunication:
             if c != -1:
                 response = self.buffer[:c].decode()
                 self.buffer = b''
-        #print('[server communication]', response)
+                print('[server communication]', response)
 
-    def connect(self):
-        self.__connect()
-
-    def send(self, action, debug=False):
-        self.s.send(json.dumps(action).encode() + end)
-        return self.receive(debug)
+    def send(self, action):
+        try:
+            self.s.send(json.dumps(action).encode() + end)
+        except NotResponseException:
+            return False
+        return True
 
     def receive(self, debug=False):
         response = None

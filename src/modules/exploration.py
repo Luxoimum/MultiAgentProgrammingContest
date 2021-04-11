@@ -40,8 +40,9 @@ class Exploration:
 
         return perception_map
 
-    def get_action(self, perception):
+    def get_action(self, perception, last_action):
         perception_map = self.get_map(perception)
+
         # Check for things in the map
         things = perception['things']
         for thing in things:
@@ -55,19 +56,17 @@ class Exploration:
             'e': perception_map[5, 6] == 1
         }
         # Check if we can continue moving
-        if available_moves[self.last_action]:
-            return self.last_action
+        if last_action in available_moves and available_moves[last_action]:
+            return last_action
         else:
-            available_indexes = []
+            moves = []
             for i, m in enumerate(available_moves):
                 if available_moves[m]:
-                    available_indexes.append(i)
+                    moves.append(m)
 
             # Set a new random move
-            random_index = np.random.randint(len(available_indexes))
-            self.last_action = [m for m in available_moves][random_index]
-
-            return self.last_action
+            random_move = np.random.randint(len(moves))
+            return moves[random_move]
 
     @staticmethod
     def _fill_diamond(matrix):

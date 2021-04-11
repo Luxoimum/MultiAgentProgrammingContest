@@ -1,4 +1,4 @@
-import numpy as np
+
 
 class CommonStructures:
     def __init__(self, name):

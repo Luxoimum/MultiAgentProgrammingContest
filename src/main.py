@@ -1,5 +1,5 @@
 import sys
-from agent import Agent
+from modules.agent_manager import AgentManager
 from multiprocessing import Process, shared_memory, Manager
 import time
 import numpy as np
@@ -13,16 +13,6 @@ TEAM_ID = "--team-name"
 AGENT_ID = "--agent-id"
 AGENT_IDS = "--agent-ids"
 CONFIG = "--config-file"
-
-
-def play_master(agent_id, agent_name, global_state):
-    a = Agent(agent_id, agent_name)
-    a.play_master(global_state)
-
-
-def play_slave(agent_id, agent_name, state, shared_map):
-    a = Agent(agent_id, agent_name, state, shared_map)
-    a.play_slave()
 
 
 def debugger(global_state, quiet=False):
@@ -67,7 +57,6 @@ def main(argv=None):
     team_id = 'A'
     team_size = 15
     agent_id = None
-    args_dictionary = {}
     config = {}
 
     for arg in range(len(argv)):
@@ -93,65 +82,15 @@ def main(argv=None):
         agent_ids = [i for i in range(1, team_size + 1)]
 
     agents_name = ['agent' + team_id + str(agent_id or i) for i in agent_ids]
-    agents_name.append('master')
-    agents = []
 
-    global_state = {
-        'states': {},
-        'maps': {},
-        'maps_shm': {}
-    }
+    print('[MAIN]', 'args:', argv)
 
-    map_size = (70, 70)
-    manager = Manager()
-
-    print('[MAIN]', 'args:', args_dictionary)
-
-    for i, a in enumerate(agents_name):
-        print('[MAIN]', 'Process: ' + a)
-        if a == 'master':
-            # Create master agent instance
-            # (this one do not interact with anything else but global_state)
-            agents.append(Process(target=play_master, args=(
-                0,
-                a,
-                global_state)
-            ))
-        else:
-            # Create a new empty map for this agent
-            void_map = np.zeros(map_size)
-            global_state['maps_shm'][a] = shared_memory.SharedMemory(name='map_' + a, create=True, size=void_map.nbytes)
-            new_map = np.ndarray(void_map.shape, dtype=void_map.dtype, buffer=global_state['maps_shm'][a].buf)
-            new_map[:] = void_map[:]
-
-            # Allocate shared memory, shared memory pointer, and position of this agent
-            single_map = manager.dict()
-            single_map['map_id'] = global_state['maps_shm'][a].name
-            single_map['y'] = int(map_size[0]/2)
-            single_map['x'] = int(map_size[1]/2)
-            global_state['maps'][a] = single_map
-
-            # Allocate space for agent internal states
-            single_state = manager.dict()
-            global_state['states'][a] = single_state
-
-            # Create agent instance
-            agents.append(Process(target=play_slave, args=(
-                agent_ids[i],
-                a,
-                global_state['states'][a],
-                global_state['maps'][a])
-            ))
-
-        # Raise up a single Process to debug global_state
-        if i == len(agents_name)-1:
-            agents.append(Process(target=debugger, args=(global_state,)))
-
-    for a in agents:
-        a.start()
-
-    for a in agents:
-        a.join()
+    manager = AgentManager(agents_name)
+    step = 0
+    while step < 750:
+        print('[MAIN] step ' + str(step))
+        manager.step()
+        step += 1
 
 
 if __name__ == '__main__':
