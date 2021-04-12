@@ -9,13 +9,9 @@ import time
 
 
 class Agent:
-    def __init__(self, agent_id, name, state=None, agent_map=None):
+    def __init__(self, agent_id, name):
         self.agent_id = agent_id
         self.name = name
-        self.state = state
-        self.map = agent_map
-        if agent_map:
-            self.agent_map = agent_map
         self.buffer = BufferManager()
         self.structures = CommonStructures(self.name)
         self.server = ServerCommunication(self.buffer, self.structures.CONF, self.structures.AUTH)
@@ -30,42 +26,21 @@ class Agent:
         response = json.loads(response or '{"type": "None"}')
         step_id = None
         perception = None
+        state = {}
         if response['type'] == 'request-action':
             # Catch perception from the response object
             step_id = response['content']['id']
             perception = response['content']['percept']
 
-            # Update state of the agent
-            self.state['entities'] = self._get_entities(perception)
-            self.state['dispenser'] = self._get_dispensers(perception)
+            # Set state of the agent
+            state['entities'] = self._get_entities(perception)
+            state['dispenser'] = self._get_dispensers(perception)
 
-            updated_map = self.exploration.get_map(perception)
-            self._update_map(updated_map)
-
-        return step_id, perception
+        return step_id, perception, state
 
     def action(self, action_id, perform_action):
         action = self.structures.get_action_structure(action_id, 'move', [perform_action])
         return self.server.send(action)
-
-    def _update_map(self, partial_map):
-        map_shape = self.map['map'].shape
-        padding = map_shape[0]-len(partial_map)
-
-        y = self.map['y'] - 5
-        x = self.map['x'] - 5
-        map_padded = np.pad(partial_map, ((0, padding), (0, padding)), mode='constant')
-        map_padded = np.roll(map_padded, y, axis=0)
-        map_padded = np.roll(map_padded, x, axis=1)
-
-        mask = map_padded > 0
-
-        self.map['map'][mask] = map_padded[mask]
-
-    def _update_position(self, updated_position):
-        y, x = updated_position
-        self.map['y'] = (self.map['y'] + y) % 70
-        self.map['x'] = (self.map['x'] + x) % 70
 
     @staticmethod
     def _get_entities(perception):

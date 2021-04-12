@@ -12,17 +12,14 @@ class AgentManager:
         self.states = {}
         self.agents = {}
         self.exploration = Exploration()
-        self.data_debug_agens = {}
+        self.data_debug_agents = {}
 
         map_size = (70, 70)
         for agent_id, agent in enumerate(agents_name):
-            print('[AGENT MANAGER]', str(agent))
-            # Create a new empty map for this agent
-            void_map = np.zeros(map_size)
-
-            # Allocate shared memory, shared memory pointer, and position of this agent
+            print('[MANAGER]', str(agent))
+            # Create a new empty map for this agent and store pointer and position of this agent
             self.maps[agent] = {}
-            self.maps[agent]['map'] = void_map
+            self.maps[agent]['map'] = np.zeros(map_size)
             self.maps[agent]['y'] = int(map_size[0]/2)
             self.maps[agent]['x'] = int(map_size[1]/2)
 
@@ -30,19 +27,21 @@ class AgentManager:
             self.states[agent] = dict()
 
             # Create agent instance
-            self.agents[agent] = Agent(agent_id, agent, self.states[agent], self.maps[agent])
+            self.agents[agent] = Agent(agent_id, agent)
             self.agents[agent].connect()
 
     def step(self):
         for agent in self.agents:
             # Get perception
-            step_id, perception = self.agents[agent].step()
+            step_id, perception, state = self.agents[agent].step()
+            self.states[agent] = state
 
-            print('[MANAGER ' + agent + '] step_id', step_id)
-            print('[MANAGER ' + agent + '] last_action', perception['lastAction'], perception['lastActionParams'])
+            #print('[MANAGER ' + agent + '] step_id', step_id)
+            #print('[MANAGER ' + agent + '] last_action', perception['lastAction'], perception['lastActionParams'], perception['lastActionResult'])
+            #print('[MANAGER ' + agent + '] disabled', perception['disabled'])
 
             last_action = None
-            if perception['lastAction'] == 'move':
+            if perception['lastAction'] != 'no_action':
                 last_action = perception['lastActionParams'][0]
                 # Update position
                 self._update_position(agent, last_action)
@@ -51,70 +50,68 @@ class AgentManager:
                 updated_map = self.exploration.get_map(perception)
                 self._update_map(agent, updated_map)
 
-            action = self.exploration.get_action(perception, last_action)
-
-            self.agents[agent].action(step_id, action)
+            if not perception['disabled']:
+                action = self.exploration.get_action(perception, last_action)
+                self.agents[agent].action(step_id, action)
+            step_id % 10 == 0 and agent == 'agentA15' and self.debugger(self.data_debug_agents, quiet=False)
 
         # Look for possible map merges
-        self.merge_maps(['agentA2', 'agentA14'])
-        self.debugger(self.data_debug_agens, ['agentA2', 'agentA14'])
-        time.sleep(1)
+        start = time.time()
+        self.merge_maps()
+        print('[MANAGER] merge_maps', time.time() - start)
+
+        time.sleep(0.5)
 
     def merge_maps(self, selected_agents=None):
-        g_map = self.maps
-        states = self.states
         relationships = {}
         # Walk through agent states looking for entities in his perception
-        for a in (selected_agents or states):
-            if 'entities' in states[a] and len(states[a]['entities']) > 0:
+        for a in (selected_agents or self.states):
+            if 'entities' in self.states[a] and len(self.states[a]['entities']) > 0:
                 # Store potential relationships and entities associated value in a hashmap
-                for e in states[a]['entities']:
-                    relationship = str(abs(e[0]))+str(abs(e[1]))
+                for e in self.states[a]['entities']:
+                    relationship = 10000 + 100*abs(e[0]) + abs(e[1])
                     relationships[relationship] = [*relationships.get(relationship, []), (a, e)]
 
         for relationship in relationships:
             # For each relationship try to synchronize pairs of agents
             entities = relationships[relationship]
-            current = entities.pop(0)
-            discards = []
             while entities:
-                target = entities.pop(0)
-                # TODO: discard known relationships before start while loop
-                if g_map[current[0]]['map'] is not g_map[target[0]]['map']:
-                    # Check if both agents are in the same perception
-                    current_map = g_map[current[0]]['map']
-                    target_map = g_map[target[0]]['map']
-                    target_position = target[1]
-                    matched = self._try_synchronize_map(current_map, target_map, target_position)
-                    if matched:
-                        # First of all store old position
-                        old_target_y = g_map[target[0]]['y']
-                        old_target_x = g_map[target[0]]['x']
-                        ols_map = g_map[target[0]]['map']
-
-                        # Next update target agent
-                        g_map[target[0]]['map'] = g_map[current[0]]['map']
-                        g_map[target[0]]['y'] = (g_map[current[0]]['y'] + current[1][0]) % 70
-                        g_map[target[0]]['x'] = (g_map[current[0]]['x'] + current[1][1]) % 70
-
-                        # Subtract old position the new one
-                        old_target_y = old_target_y - g_map[target[0]]['y']
-                        old_target_x = old_target_x - g_map[target[0]]['x']
-
-                        # Then search agents with old map_id and substitute for new one and new position
-                        for a in g_map:
-                            if g_map[a]['map'] is ols_map:
-                                g_map[a]['y'] = (g_map[a]['y'] - old_target_y) % 70
-                                g_map[a]['x'] = (g_map[a]['x'] - old_target_x) % 70
-                                g_map[a]['map'] = g_map[current[0]]['map']
+                current = entities.pop(0)
+                for target in entities:
+                    if self.maps[current[0]]['map'] is self.maps[target[0]]['map']:
+                        # Both are in the same map so clean target from entities
+                        entities.remove(target)
                     else:
-                        discards.append(target)
+                        # Check if both agents are in the same perception
+                        current_map = self.maps[current[0]]['map']
+                        target_map = self.maps[target[0]]['map']
+                        target_position = target[1]
+                        matched = self._try_synchronize_map(current_map, target_map, target_position)
+                        if matched:
+                            print('[MANAGER ' + current[0] + '] match with ' + target[0])
+                            # First of all clean target from entities
+                            entities.remove(target)
 
-                    # Add discarted entities if entities queue is emtpy
-                    if not entities:
-                        entities = [*entities, *discards]
-                        if entities:
-                            current = entities.pop(0)
+                            # Then store old position
+                            old_target_y = self.maps[target[0]]['y']
+                            old_target_x = self.maps[target[0]]['x']
+                            ols_map = self.maps[target[0]]['map']
+
+                            # Next update target agent
+                            self.maps[target[0]]['map'] = self.maps[current[0]]['map']
+                            self.maps[target[0]]['y'] = (self.maps[current[0]]['y'] + current[1][0]) % 70
+                            self.maps[target[0]]['x'] = (self.maps[current[0]]['x'] + current[1][1]) % 70
+
+                            # And Subtract old position the new one
+                            old_target_y = old_target_y - self.maps[target[0]]['y']
+                            old_target_x = old_target_x - self.maps[target[0]]['x']
+
+                            # Finally search agents with old map_id and substitute for new one and new position
+                            for a in self.maps:
+                                if self.maps[a]['map'] is ols_map:
+                                    self.maps[a]['y'] = (self.maps[a]['y'] - old_target_y) % 70
+                                    self.maps[a]['x'] = (self.maps[a]['x'] - old_target_x) % 70
+                                    self.maps[a]['map'] = self.maps[current[0]]['map']
 
     def _update_map(self, agent, partial_map):
         map_shape = self.maps[agent]['map'].shape
@@ -207,7 +204,7 @@ class AgentManager:
             match_percent = matches / (counts[0] + counts[1])
             debug and print('[DEBUG_AGENT_MASTER]', 'match_percent', match_percent)
 
-            if match_percent > 0.8:
+            if match_percent > 0.7:
                 mask_merge = map_2 > 0
                 map_1[mask_merge] = map_2[mask_merge]
                 is_matched = True
@@ -239,6 +236,7 @@ class AgentManager:
                                               'blue'])
                 bounds = [0, 0.9, 9, 99, 200]
                 norm = colors.BoundaryNorm(bounds, cmap.N)
+
                 plt.imshow(image,
                            interpolation='nearest',
                            cmap=cmap,
@@ -246,4 +244,4 @@ class AgentManager:
 
                 number_of_renders[agent] = number_of_renders.get(agent, 0) + 1
                 plt.savefig('img/' + agent + '_map_' + str(number_of_renders[agent]) + '.png')
-
+                plt.cla()
