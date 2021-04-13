@@ -33,12 +33,12 @@ class AgentManager:
 
     def step(self):
         for agent in self.agents:
-            # Get perception
+            # Get agent perception
             self.step_id, self.states[agent] = self.agents[agent].step()
 
             if self.states[agent]['perception']['lastAction'] != 'no_action' and self.states[agent]['perception']['lastActionResult'] == 'success':
                 last_action = self.states[agent]['perception']['lastActionParams'][0]
-                # Update position
+                # Update agent position
                 self._update_position(agent, last_action)
 
                 # Update agent map
@@ -46,8 +46,11 @@ class AgentManager:
                 self._update_map(agent, updated_map)
 
         # Look for possible map merges
-        self.merge_maps()
+        self._merge_maps()
 
+        # Plan strategy
+
+        # Perform actions
         for agent in self.agents:
             last_action = None
             if self.states[agent]['perception']['lastAction'] != 'no_action':
@@ -60,8 +63,7 @@ class AgentManager:
             self.step_id % 2 == 0 and agent == 'agentA15' and self.debugger(self.data_debug_agents)
         #time.sleep(0.5)
 
-    def merge_maps(self, selected_agents=None):
-        start = time.time()
+    def _merge_maps(self, selected_agents=None):
         relationships = {}
         # Walk through agent states looking for entities in his perception
         for a in (selected_agents or self.states):
@@ -125,7 +127,6 @@ class AgentManager:
                                     self.maps[a]['y'] = (self.maps[a]['y'] - old_target_y) % 70
                                     self.maps[a]['x'] = (self.maps[a]['x'] - old_target_x) % 70
                                     self.maps[a]['map'] = self.maps[current[0]]['map']
-        print('[MANAGER] merge_maps', time.time() - start)
 
     def _update_map(self, agent, partial_map):
         map_shape = self.maps[agent]['map'].shape
@@ -153,7 +154,7 @@ class AgentManager:
         self.maps[agent]['x'] = (self.maps[agent]['x'] + x) % 70
 
     def debugger(self, data_debug, selected_agents=None, quiet=True):
-        self.debug_map(self.maps, data_debug, selected_agents, quiet)
+        self._debug_map(self.maps, data_debug, selected_agents, quiet)
 
     @staticmethod
     def _try_synchronize_map(current_map, target_map, target_position, debug=False):
@@ -215,7 +216,7 @@ class AgentManager:
         return is_matched
 
     @staticmethod
-    def debug_map(global_map, number_of_renders, selected_agents=None, quiet=True):
+    def _debug_map(global_map, number_of_renders, selected_agents=None, quiet=True):
         map_ids = []
         for agent in (selected_agents or global_map):
             if id(global_map[agent]['map']) not in map_ids:

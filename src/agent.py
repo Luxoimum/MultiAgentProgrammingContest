@@ -25,7 +25,6 @@ class Agent:
         response = self.server.receive(debug)
         response = json.loads(response or '{"type": "None"}')
         step_id = None
-        perception = None
         state = {}
         if response['type'] == 'request-action':
             # Catch perception from the response object
