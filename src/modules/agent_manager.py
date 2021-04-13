@@ -13,6 +13,7 @@ class AgentManager:
         self.agents = {}
         self.exploration = Exploration()
         self.data_debug_agents = {}
+        self.step_id = None
 
         map_size = (70, 70)
         for agent_id, agent in enumerate(agents_name):
@@ -33,36 +34,34 @@ class AgentManager:
     def step(self):
         for agent in self.agents:
             # Get perception
-            step_id, perception, state = self.agents[agent].step()
-            self.states[agent] = state
+            self.step_id, self.states[agent] = self.agents[agent].step()
 
-            #print('[MANAGER ' + agent + '] step_id', step_id)
-            #print('[MANAGER ' + agent + '] last_action', perception['lastAction'], perception['lastActionParams'], perception['lastActionResult'])
-            #print('[MANAGER ' + agent + '] disabled', perception['disabled'])
-
-            last_action = None
-            if perception['lastAction'] != 'no_action':
-                last_action = perception['lastActionParams'][0]
+            if self.states[agent]['perception']['lastAction'] != 'no_action' and self.states[agent]['perception']['lastActionResult'] == 'success':
+                last_action = self.states[agent]['perception']['lastActionParams'][0]
                 # Update position
                 self._update_position(agent, last_action)
 
                 # Update agent map
-                updated_map = self.exploration.get_map(perception)
+                updated_map = self.exploration.get_map(self.states[agent]['perception'])
                 self._update_map(agent, updated_map)
 
-            if not perception['disabled']:
-                action = self.exploration.get_action(perception, last_action)
-                self.agents[agent].action(step_id, action)
-            step_id % 10 == 0 and agent == 'agentA15' and self.debugger(self.data_debug_agents, quiet=False)
-
         # Look for possible map merges
-        start = time.time()
         self.merge_maps()
-        print('[MANAGER] merge_maps', time.time() - start)
 
-        time.sleep(0.5)
+        for agent in self.agents:
+            last_action = None
+            if self.states[agent]['perception']['lastAction'] != 'no_action':
+                last_action = self.states[agent]['perception']['lastActionParams'][0]
+
+            if not self.states[agent]['perception']['disabled']:
+                action = self.exploration.get_action(self.states[agent]['perception'], last_action)
+                self.agents[agent].action(self.step_id, action)
+
+            self.step_id % 2 == 0 and agent == 'agentA15' and self.debugger(self.data_debug_agents)
+        #time.sleep(0.5)
 
     def merge_maps(self, selected_agents=None):
+        start = time.time()
         relationships = {}
         # Walk through agent states looking for entities in his perception
         for a in (selected_agents or self.states):
@@ -83,10 +82,15 @@ class AgentManager:
                         entities.remove(target)
                     else:
                         # Check if both agents are in the same perception
-                        current_map = self.maps[current[0]]['map']
-                        target_map = self.maps[target[0]]['map']
+                        current_map = self.exploration.get_map(self.states[current[0]]['perception'])
+                        target_map = self.exploration.get_map(self.states[target[0]]['perception'])
                         target_position = target[1]
-                        matched = self._try_synchronize_map(current_map, target_map, target_position)
+                        matched = self._try_synchronize_map(
+                            current_map,
+                            target_map,
+                            target_position,
+                            debug=True
+                        )
                         if matched:
                             print('[MANAGER ' + current[0] + '] match with ' + target[0])
                             # First of all clean target from entities
@@ -95,7 +99,7 @@ class AgentManager:
                             # Then store old position
                             old_target_y = self.maps[target[0]]['y']
                             old_target_x = self.maps[target[0]]['x']
-                            ols_map = self.maps[target[0]]['map']
+                            old_target_map = self.maps[target[0]]['map']
 
                             # Next update target agent
                             self.maps[target[0]]['map'] = self.maps[current[0]]['map']
@@ -106,20 +110,30 @@ class AgentManager:
                             old_target_y = old_target_y - self.maps[target[0]]['y']
                             old_target_x = old_target_x - self.maps[target[0]]['x']
 
+                            # Roll original target map in order to merge with current map
+                            target_map_to_merge = np.roll(old_target_map, old_target_y, axis=0)
+                            target_map_to_merge = np.roll(target_map_to_merge, old_target_x, axis=1)
+
+                            # Ignore cells with value = 0 in order to merge only valuable data
+                            mask_merge = target_map_to_merge > 0
+
+                            self.maps[current[0]]['map'][mask_merge] = target_map_to_merge[mask_merge]
+
                             # Finally search agents with old map_id and substitute for new one and new position
                             for a in self.maps:
-                                if self.maps[a]['map'] is ols_map:
+                                if self.maps[a]['map'] is old_target_map:
                                     self.maps[a]['y'] = (self.maps[a]['y'] - old_target_y) % 70
                                     self.maps[a]['x'] = (self.maps[a]['x'] - old_target_x) % 70
                                     self.maps[a]['map'] = self.maps[current[0]]['map']
+        print('[MANAGER] merge_maps', time.time() - start)
 
     def _update_map(self, agent, partial_map):
         map_shape = self.maps[agent]['map'].shape
         padding = map_shape[0]-len(partial_map)
+        map_padded = np.pad(partial_map, ((0, padding), (0, padding)), mode='constant')
 
         y = self.maps[agent]['y'] - 5
         x = self.maps[agent]['x'] - 5
-        map_padded = np.pad(partial_map, ((0, padding), (0, padding)), mode='constant')
         map_padded = np.roll(map_padded, y, axis=0)
         map_padded = np.roll(map_padded, x, axis=1)
 
@@ -142,71 +156,60 @@ class AgentManager:
         self.debug_map(self.maps, data_debug, selected_agents, quiet)
 
     @staticmethod
-    def _try_synchronize_map(shared_map_id, shared_map_to_merge_id, position, debug=False):
-        if np.all(shared_map_id == 0) or np.all(shared_map_to_merge_id == 0):
+    def _try_synchronize_map(current_map, target_map, target_position, debug=False):
+        if np.all(current_map < 10) or np.all(target_map < 10):
             return False
 
-        # Get shared memory of both maps
-        map_1 = shared_map_id
-        map_2 = shared_map_to_merge_id
-
         # In order to check if both maps match first subtract common matrix
-        # Find the correct corner for Y value
-        if position[0] < 0:
-            from_y = 30 + position[0]
-            to_y = 40
+        # Find the correct corner for Y value being the center of the map (35, 35)
+        if target_position[0] < 0:
+            from_y = 30 + target_position[0]
+            to_y = 41
         else:
             from_y = 30
-            to_y = 40 + position[0]
+            to_y = 41 + target_position[0]
 
-        # Find the correct corner for X value
-        if position[1] < 0:
-            from_x = 30 + position[1]
-            to_x = 40
+        # Find the correct corner for X value being the center of the map (35, 35)
+        if target_position[1] < 0:
+            from_x = 30 + target_position[1]
+            to_x = 41
         else:
             from_x = 30
-            to_x = 40 + position[1]
+            to_x = 41 + target_position[1]
 
-        debug and print('[DEBUG_AGENT_MASTER]', 'position:', position)
+        debug and print('[DEBUG_AGENT_MASTER]', 'target_position:', target_position)
         debug and print('[DEBUG_AGENT_MASTER]', 'corners:', from_y, to_y, from_x, to_x)
 
+        void_map = np.zeros((to_y - from_y, to_x - from_x))
+        map_shape = void_map.shape
+        padding = map_shape[0]-len(current_map)
+
+        current_map_pad = np.pad(current_map, ((0, padding), (0, padding)), mode='constant')
+        target_map_pad = np.pad(target_map, ((0, padding), (0, padding)), mode='constant')
+
         # Subtract submatrix for both maps
-        map_2 = np.roll(map_2, position[0], axis=0)
-        map_2 = np.roll(map_2, position[1], axis=1)
-        sub_map_1 = map_1[from_y:to_y, from_x:to_x]
-        sub_map_2 = map_2[from_y:to_y, from_x:to_x]
-        debug and print('[DEBUG_AGENT_MASTER]', 'sub_map_1:', sub_map_1)
-        debug and print('[DEBUG_AGENT_MASTER]', 'sub_map_2:', sub_map_2)
+        target_map_pad = np.roll(target_map_pad, target_position[0], axis=0)
+        target_map_pad = np.roll(target_map_pad, target_position[1], axis=1)
+
+        debug and print('[DEBUG_AGENT_MASTER]', 'current_map_pad:', current_map_pad)
+        debug and print('[DEBUG_AGENT_MASTER]', 'target_map_pad:', target_map_pad)
 
         # Find intersection
-        sum_sub_maps = sub_map_1 + sub_map_2
-        maps_intersection = sum_sub_maps > 1
-        debug and print('[DEBUG_AGENT_MASTER]', 'maps_intersection:', maps_intersection)
+        sum_sub_maps = current_map_pad + target_map_pad
+        debug and print('[DEBUG_AGENT_MASTER]', 'sum_sub_maps:', sum_sub_maps)
+        maps_intersection = sum_sub_maps == 20
 
         # Check if both maps match
         is_matched = False
-        mask_map_1 = sub_map_1[maps_intersection] > 1
-        mask_map_2 = sub_map_2[maps_intersection] > 1
-        debug and print('[DEBUG_AGENT_MASTER]', 'mask_map_1:', mask_map_1)
-        debug and print('[DEBUG_AGENT_MASTER]', 'mask_map_2:', mask_map_2)
+        mask_current_map = current_map_pad[maps_intersection]
+        mask_target_map = target_map_pad[maps_intersection]
 
-        if np.any(mask_map_1) and np.any(mask_map_2):
-            unique, counts = np.unique(mask_map_1 == mask_map_2, return_counts=True)
-            debug and print('[DEBUG_AGENT_MASTER]', 'unique', unique)
-            debug and print('[DEBUG_AGENT_MASTER]', 'counts', counts)
-            if unique[0]:
-                matches = counts[0]
-            else:
-                matches = counts[1]
-            debug and print('[DEBUG_AGENT_MASTER]', 'matches', matches)
+        debug and print('[DEBUG_AGENT_MASTER]', 'mask_current_map:', mask_current_map)
+        debug and print('[DEBUG_AGENT_MASTER]', 'mask_target_map:', mask_target_map)
 
-            # If the match percentage is upper 0.8 we merge maps
-            match_percent = matches / (counts[0] + counts[1])
-            debug and print('[DEBUG_AGENT_MASTER]', 'match_percent', match_percent)
-
-            if match_percent > 0.7:
-                mask_merge = map_2 > 0
-                map_1[mask_merge] = map_2[mask_merge]
+        if np.any(mask_current_map) and np.any(mask_target_map):
+            if np.all(mask_current_map == mask_target_map):
+                debug and print('[DEBUG_AGENT_MASTER]', 'match')
                 is_matched = True
 
         return is_matched

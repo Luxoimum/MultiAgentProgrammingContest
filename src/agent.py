@@ -33,10 +33,11 @@ class Agent:
             perception = response['content']['percept']
 
             # Set state of the agent
+            state['perception'] = perception
             state['entities'] = self._get_entities(perception)
             state['dispenser'] = self._get_dispensers(perception)
 
-        return step_id, perception, state
+        return step_id, state
 
     def action(self, action_id, perform_action):
         action = self.structures.get_action_structure(action_id, 'move', [perform_action])
