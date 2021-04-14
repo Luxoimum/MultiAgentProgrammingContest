@@ -2,10 +2,7 @@ from modules.server_communication import ServerCommunication
 from modules.buffer_manager import BufferManager
 from modules.common_structures import CommonStructures
 from modules.exploration import Exploration
-from multiprocessing import shared_memory
-import numpy as np
 import json
-import time
 
 
 class Agent:
