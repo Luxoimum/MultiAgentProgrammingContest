@@ -44,7 +44,6 @@ def main(argv=None):
     manager = AgentManager(agents_name)
     step = 0
     while step < 750:
-        print('[MAIN] step ' + str(step))
         manager.step()
         step += 1
 

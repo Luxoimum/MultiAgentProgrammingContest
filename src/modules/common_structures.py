@@ -51,7 +51,7 @@ class CommonStructures:
         ]
 
     def get_action_structure(self, id=None, action_type=None, params=None):
-        if id is not None and params is not None:
+        if id:
             content = self.ACTION['content']
             content['id'] = id
             content['type'] = action_type

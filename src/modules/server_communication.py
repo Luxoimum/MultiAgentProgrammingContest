@@ -1,11 +1,11 @@
 import socket
 import json
 from exceptions.not_response_exception import NotResponseException
-
+from interfaces.server_communication_interface import ServerCommunicationInterface
 end = b'\0'
 
 
-class ServerCommunication:
+class ServerCommunication(ServerCommunicationInterface):
     def __init__(self, buffer_manager, conf, auth):
         self.buffer_manager = buffer_manager
         self.conf = conf

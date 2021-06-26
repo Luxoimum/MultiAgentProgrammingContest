@@ -12,8 +12,22 @@ class Exploration:
         self.last_action = self.movements[np.random.randint(4)]
 
     def get_map(self, perception):
-        obstacles = perception['terrain']['obstacle'] if 'obstacle' in perception['terrain'] else []
+        goal = perception['terrain']['goal'] if 'goal' in perception['terrain'] else []
         things = perception['things']
+        perception_map = self.get_obstacles(perception)
+
+        # Goal zone and things in the view has 10 as its value
+        for thing in things:
+            if thing['type'] == 'dispenser':
+                perception_map[thing['y']+5, thing['x']+5] = 10
+
+        for i in range(len(goal)):
+            perception_map[goal[i][1]+5, goal[i][0]+5] = 10
+
+        return perception_map
+
+    def get_obstacles(self, perception):
+        obstacles = perception['terrain']['obstacle'] if 'obstacle' in perception['terrain'] else []
         perception_map = np.matrix(np.zeros((11, 11)))
         perception_map = self._fill_diamond(perception_map)
 
@@ -21,52 +35,44 @@ class Exploration:
         for i in range(len(obstacles)):
             perception_map[obstacles[i][1]+5, obstacles[i][0]+5] = 10
 
-        # Check for useful things in the map
-        # for thing in things:
-        #    if thing['type'] == 'dispenser':
-        #        perception_map[thing['y']+5, thing['x']+5] = 50 + int(thing['details'][1])
-
-        # Check if perception_map is not empty
-        #perception_map_mask = perception_map > 1
-        #if np.any(perception_map_mask):
-        #    # Check if perception_map and last_map are equals
-        #    is_equal = np.array_equal(
-        #        self.perception_map[perception_map_mask],
-        #        perception_map[perception_map_mask]
-        #    )
-        #    if not is_equal:
-        #        self.perception_map[:] = perception_map[:]
-        #        return self.perception_map
-
         return perception_map
 
-    def get_action(self, perception, last_action):
-        perception_map = self.get_map(perception)
+    def get_available_cells(self, perception):
+        perception_map = self.get_obstacles(perception)
 
         # Check for things in the map
         things = perception['things']
         for thing in things:
             if thing['type'] == 'entity':
-                perception_map[thing['y']+5, thing['x']+5] = 100
+                perception_map[thing['y']+5, thing['x']+5] = 10
 
-        available_moves = {
-            'n': perception_map[4, 5] == 1,
-            's': perception_map[6, 5] == 1,
-            'w': perception_map[5, 4] == 1,
-            'e': perception_map[5, 6] == 1
-        }
-        # Check if we can continue moving
-        if last_action in available_moves and available_moves[last_action]:
-            return last_action
+        # Check if agent has attached elements
+        if perception['attached']:
+            available_moves = {
+                'n': perception_map[4, 5] == 1 and perception_map[4, 4] == 1 and perception_map[4, 6] == 1,
+                's': perception_map[6, 5] == 1 and perception_map[6, 4] == 1 and perception_map[6, 6] == 1,
+                'w': perception_map[5, 4] == 1 and perception_map[4, 4] == 1 and perception_map[6, 4] == 1,
+                'e': perception_map[5, 6] == 1 and perception_map[6, 4] == 1 and perception_map[6, 6] == 1
+            }
         else:
-            moves = []
-            for i, m in enumerate(available_moves):
-                if available_moves[m]:
-                    moves.append(m)
+            available_moves = {
+                'n': perception_map[4, 5] == 1,
+                's': perception_map[6, 5] == 1,
+                'w': perception_map[5, 4] == 1,
+                'e': perception_map[5, 6] == 1
+            }
 
-            # Set a new random move
-            random_move = np.random.randint(len(moves))
-            return moves[random_move]
+        moves = []
+        for i, m in enumerate(available_moves):
+            if available_moves[m]:
+                moves.append(m)
+
+        # Check failed movements
+        if perception['lastActionResult'] == 'failed_path':
+            if perception['lastActionParams'][0] in moves:
+                moves.remove(perception['lastActionParams'][0])
+
+        return moves
 
     @staticmethod
     def _fill_diamond(matrix):

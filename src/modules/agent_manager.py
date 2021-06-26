@@ -1,19 +1,40 @@
+import os, sys
 import numpy as np
 from agent import Agent
 from modules.exploration import Exploration
-import time
 import matplotlib.pyplot as plt
 from matplotlib import colors
+from modules.planification_system import PlannerSystem
+from modules.action_calculator import ActionCalculator
+import time
 
 
 class AgentManager:
     def __init__(self, agents_name):
         self.maps = {}
+        self.dispensers = {}
+        self.taskboards = {}
+        self.goals = {}
         self.states = {}
         self.agents = {}
         self.exploration = Exploration()
         self.data_debug_agents = {}
         self.step_id = None
+        self.planner = PlannerSystem()
+        self.action_planner = ActionCalculator()
+        self.time = False
+
+        # Build debug directories
+        f = open('debug/count.txt', 'r')
+        self.dir = f.read()
+        f.close()
+        self.path = 'debug/' + self.dir
+
+        os.mkdir(self.path, 0o755)
+        os.mkdir(self.path + '/img', 0o755)
+
+        f = open('debug/count.txt', 'w')
+        f.write(str(int(self.dir) + 1))
 
         map_size = (70, 70)
         for agent_id, agent in enumerate(agents_name):
@@ -32,11 +53,19 @@ class AgentManager:
             self.agents[agent].connect()
 
     def step(self):
+        start = time.time()
+        # Get state for any agent
         for agent in self.agents:
             # Get agent perception
             self.step_id, self.states[agent] = self.agents[agent].step()
 
-            if self.states[agent]['perception']['lastAction'] != 'no_action' and self.states[agent]['perception']['lastActionResult'] == 'success':
+            file_name = self.path + '/' + agent
+            lastActionParams = self.states[agent]['perception']['lastActionParams']
+            self.write_debug(file_name, '[STEP ' + str(self.step_id) + '] ' + agent + ' lastAction: ' + self.states[agent]['perception']['lastAction'] + '\n')
+            self.write_debug(file_name, '[STEP ' + str(self.step_id) + '] ' + agent + ' lastActionResult: ' + self.states[agent]['perception']['lastActionResult'] + '\n')
+            self.write_debug(file_name, '[STEP ' + str(self.step_id) + '] ' + agent + ' lastActionParams: ' + (lastActionParams[0] + '\n' if lastActionParams else 'no-param\n'))
+
+            if self.states[agent]['perception']['lastAction'] == 'move' and self.states[agent]['perception']['lastActionResult'] == 'success':
                 last_action = self.states[agent]['perception']['lastActionParams'][0]
                 # Update agent position
                 self._update_position(agent, last_action)
@@ -45,22 +74,70 @@ class AgentManager:
                 updated_map = self.exploration.get_map(self.states[agent]['perception'])
                 self._update_map(agent, updated_map)
 
+        print('[MANAGER] step ', self.step_id)
+        end = time.time()
+        self.time and print('[TIME] perceptions: ', end - start)
+        start = end
+
         # Look for possible map merges
         self._merge_maps()
+        end = time.time()
+        self.time and print('[TIME] merge_maps: ', end - start)
+        start = end
 
-        # Plan strategy
+        # Change data structures in order to improve the performance of planners
+        merged_maps = self._get_planner_data()
+        end = time.time()
+        self.time and print('[TIME] change data structure: ', end - start)
+        start = end
 
-        # Perform actions
-        for agent in self.agents:
-            last_action = None
-            if self.states[agent]['perception']['lastAction'] != 'no_action':
-                last_action = self.states[agent]['perception']['lastActionParams'][0]
+        # Plan strategy to get task for any agent
+        self.planner.inflate(merged_maps, self.dispensers, self.taskboards, self.goals, self.states)
+        tasks = self.planner.get_task()
+        for t in tasks:
+            file_name = self.path + '/' + t
+            self.write_debug(file_name, '[STEP ' + str(self.step_id) + '] ' + t + ' task: ' + tasks[t] + '\n')
+
+        for ids in merged_maps:
+            t = []
+            for a in merged_maps[ids]['agents']:
+                t.append((a[0], tasks[a[0]]))
+            print('[MAPAS] ', ids, t)
+        print('[MAPAS RECUENTO]', len(merged_maps))
+
+        end = time.time()
+        self.time and print('[TIME] get tasks: ', end - start)
+        start = end
+
+        # Plan strategy to get actions for any task given by an agent
+        self.action_planner.inflate(merged_maps, self.dispensers, self.taskboards, self.goals, self.states)
+        actions = self.action_planner.get_action(tasks)
+        for a in actions:
+            file_name = self.path + '/' + a[0]
+            self.write_debug(file_name, '[STEP ' + str(self.step_id) + '] ' + a[0] + ' action: ' + a[1] + ' ' + str(a[2]) + '\n')
+            self.write_debug(file_name, '======================\n')
+
+        # print('[ACTIONS]', actions)
+        end = time.time()
+        self.time and print('[TIME] get actions: ', end - start)
+        start = end
+
+        # Perform actions by sending a message to the server
+        for action in actions:
+            agent, perform_action, action_param = action
 
             if not self.states[agent]['perception']['disabled']:
-                action = self.exploration.get_action(self.states[agent]['perception'], last_action)
-                self.agents[agent].action(self.step_id, action)
+                if perform_action == 'move':
+                    available_params = self.exploration.get_available_cells(self.states[agent]['perception'])
+                    if available_params and action_param not in available_params:
+                        random_move = np.random.randint(len(available_params)) if available_params else 0
+                        action_param = available_params[random_move]
 
-            self.step_id % 2 == 0 and agent == 'agentA15' and self.debugger(self.data_debug_agents)
+                self.agents[agent].action(self.step_id, perform_action, action_param)
+
+        self.step_id % 2 == 0 and self.debugger(self.data_debug_agents)
+        end = time.time()
+        self.time and print('[TIME] perform actions: ', end - start)
         #time.sleep(0.5)
 
     def _merge_maps(self, selected_agents=None):
@@ -73,25 +150,24 @@ class AgentManager:
                     relationship = 10000 + 100*abs(e[0]) + abs(e[1])
                     relationships[relationship] = [*relationships.get(relationship, []), (a, e)]
 
+        # For each relationship try to synchronize pairs of agents
         for relationship in relationships:
-            # For each relationship try to synchronize pairs of agents
             entities = relationships[relationship]
             while entities:
                 current = entities.pop(0)
                 for target in entities:
-                    if self.maps[current[0]]['map'] is self.maps[target[0]]['map']:
-                        # Both are in the same map so clean target from entities
+                    # If both entities are in the same map clean target from entities
+                    if self.maps[current[0]]['map'] is self.maps[target[0]]['map'] and len(entities) == 1:
                         entities.remove(target)
                     else:
                         # Check if both agents are in the same perception
                         current_map = self.exploration.get_map(self.states[current[0]]['perception'])
                         target_map = self.exploration.get_map(self.states[target[0]]['perception'])
                         target_position = target[1]
-                        matched = self._try_synchronize_map(
+                        matched = self._check_same_perception(
                             current_map,
                             target_map,
-                            target_position,
-                            debug=True
+                            target_position
                         )
                         if matched:
                             print('[MANAGER ' + current[0] + '] match with ' + target[0])
@@ -143,21 +219,98 @@ class AgentManager:
         self.maps[agent]['map'][mask] = map_padded[mask]
 
     def _update_position(self, agent, last_movement):
-        movements = {
-            'n': (-1, 0),
-            's': (1, 0),
-            'w': (0, -1),
-            'e': (0, 1),
-        }
-        y, x = movements[last_movement]
-        self.maps[agent]['y'] = (self.maps[agent]['y'] + y) % 70
-        self.maps[agent]['x'] = (self.maps[agent]['x'] + x) % 70
+        if last_movement:
+            movements = {
+                'n': (-1, 0),
+                's': (1, 0),
+                'w': (0, -1),
+                'e': (0, 1),
+            }
+            y, x = movements[last_movement]
+            self.maps[agent]['y'] = (self.maps[agent]['y'] + y) % 70
+            self.maps[agent]['x'] = (self.maps[agent]['x'] + x) % 70
 
     def debugger(self, data_debug, selected_agents=None, quiet=True):
         self._debug_map(self.maps, data_debug, selected_agents, quiet)
 
+    def _get_planner_data(self, debug=False):
+        map_ids = []
+        merged_maps = {}
+        _id = 110
+        for i, agent in enumerate(self.maps):
+            # Check if agent map does exist
+            agent_map_id = id(self.maps[agent]['map'])
+
+            if agent_map_id in map_ids:
+                merged_maps[agent_map_id]['agents'].append((agent, self.maps[agent]['y'], self.maps[agent]['x']))
+            else:
+                map_ids.append(agent_map_id)
+                merged_maps[agent_map_id] = {}
+                merged_maps[agent_map_id]['map'] = self.maps[agent]['map']
+                merged_maps[agent_map_id]['agents'] = [(agent, self.maps[agent]['y'], self.maps[agent]['x'])]
+
+            if self.states[agent]['dispenser']:
+                for dispenser in self.states[agent]['dispenser']:
+                    y = (self.maps[agent]['y'] + dispenser[0]) % 70
+                    x = (self.maps[agent]['x'] + dispenser[1]) % 70
+
+                    if agent_map_id not in self.dispensers:
+                        self.dispensers[agent_map_id] = {}
+
+                    if dispenser[2] not in self.dispensers[agent_map_id]:
+                        # Create empty map to store this dispenser
+                        empty_map = np.zeros((70, 70))
+
+                        # Update dispenser position
+                        empty_map[y, x] = _id
+
+                        # Add new dispenser map
+                        self.dispensers[agent_map_id][dispenser[2]] = empty_map
+                    else:
+                        # Store dispenser in map if doesnt exist
+                        if self.dispensers[agent_map_id][dispenser[2]][y, x] != _id:
+                            self.dispensers[agent_map_id][dispenser[2]][y, x] = _id
+                            self.dispensers[agent_map_id][dispenser[2]] = self._cost_calc(self.dispensers[agent_map_id][dispenser[2]], _id)
+                for dispenser in self.dispensers[agent_map_id]:
+                    plt.imshow(self.dispensers[agent_map_id][dispenser])
+                    plt.savefig(self.path + '/img/' + str(self.step_id) + '_' + agent + '_' + dispenser + '_' + '.png')
+                    plt.cla()
+
+            if self.states[agent]['task_board']:
+                for task_board in self.states[agent]['task_board']:
+                    if agent_map_id not in self.taskboards:
+                        self.taskboards[agent_map_id] = np.zeros((70, 70))
+
+                    # Update task_board position
+                    y = (self.maps[agent]['y'] + task_board[0]) % 70
+                    x = (self.maps[agent]['x'] + task_board[1]) % 70
+                    if self.taskboards[agent_map_id][y, x] != _id:
+                        self.taskboards[agent_map_id][y, x] = _id
+                        self.taskboards[agent_map_id] = self._cost_calc(self.taskboards[agent_map_id], _id)
+                plt.imshow(self.taskboards[agent_map_id])
+                plt.savefig(self.path + '/img/' + str(self.step_id) + '_' + agent + '_taskboards_' + '.png')
+                plt.cla()
+
+            if self.states[agent]['goal']:
+                for position in self.states[agent]['goal']:
+                    if agent_map_id not in self.goals:
+                        self.goals[agent_map_id] = np.zeros((70, 70))
+
+                    # Update goal position
+                    y = (self.maps[agent]['y'] + position[0]) % 70
+                    x = (self.maps[agent]['x'] + position[1]) % 70
+                    if self.goals[agent_map_id][y, x] != _id:
+                        self.goals[agent_map_id][y, x] = _id
+
+                self.goals[agent_map_id] = self._cost_calc(self.goals[agent_map_id], _id)
+                plt.imshow(self.goals[agent_map_id])
+                plt.savefig(self.path + '/img/' + str(self.step_id) + '_' + agent + '_goal_' + '.png')
+                plt.cla()
+
+        return merged_maps
+
     @staticmethod
-    def _try_synchronize_map(current_map, target_map, target_position, debug=False):
+    def _check_same_perception(current_map, target_map, target_position, debug=False):
         if np.all(current_map < 10) or np.all(target_map < 10):
             return False
 
@@ -181,6 +334,7 @@ class AgentManager:
         debug and print('[DEBUG_AGENT_MASTER]', 'target_position:', target_position)
         debug and print('[DEBUG_AGENT_MASTER]', 'corners:', from_y, to_y, from_x, to_x)
 
+        # Create a cannon matrix that involves both perceptions (current and target)
         void_map = np.zeros((to_y - from_y, to_x - from_x))
         map_shape = void_map.shape
         padding = map_shape[0]-len(current_map)
@@ -249,3 +403,28 @@ class AgentManager:
                 number_of_renders[agent] = number_of_renders.get(agent, 0) + 1
                 plt.savefig('img/' + agent + '_map_' + str(number_of_renders[agent]) + '.png')
                 plt.cla()
+
+    @staticmethod
+    def _cost_calc(empty_map, element):
+        elements = np.where(empty_map == element)
+        elements = list(zip(elements[0], elements[1]))
+        paths = np.where(empty_map != element)
+        paths = list(zip(paths[0], paths[1]))
+        new_map = np.ndarray(shape=empty_map.shape)
+        new_map[:] = empty_map[:]
+        for cell in paths:
+            distances = []
+            for element in elements:
+                if cell != element:
+                    distances.append(np.sqrt((cell[0] - element[0])**2 + (cell[1] - element[1])**2))
+            min_distance = min(distances)
+            new_map[cell] = min_distance
+
+        return new_map
+
+    @staticmethod
+    def write_debug(file_name, text):
+        f = open(file_name + '.txt', 'a')
+        f.write(text)
+        f.close()
+

@@ -32,11 +32,16 @@ class Agent:
             state['perception'] = perception
             state['entities'] = self._get_entities(perception)
             state['dispenser'] = self._get_dispensers(perception)
+            state['task_board'] = self._get_taskboard(perception)
+            state['goal'] = self._get_goal(perception)
+            state['task'] = perception['task']
+            state['tasks'] = perception['tasks']
+            state['attached'] = perception['attached']
 
         return step_id, state
 
-    def action(self, action_id, perform_action):
-        action = self.structures.get_action_structure(action_id, 'move', [perform_action])
+    def action(self, action_id, perform_action, param):
+        action = self.structures.get_action_structure(action_id, perform_action, [param])
         return self.server.send(action)
 
     @staticmethod
@@ -48,7 +53,17 @@ class Agent:
 
     @staticmethod
     def _get_dispensers(perception):
-        entities = list(filter(lambda th: th['type'] == 'dispenser', perception['things']))
+        dispensers = list(filter(lambda th: th['type'] == 'dispenser', perception['things']))
 
-        return list(map(lambda e: (e['y'], e['x'], e['details']), entities))
+        return list(map(lambda e: (e['y'], e['x'], e['details']), dispensers))
+
+    @staticmethod
+    def _get_taskboard(perception):
+        task_boards = list(filter(lambda th: th['type'] == 'taskboard', perception['things']))
+
+        return list(map(lambda e: (e['y'], e['x']), task_boards))
+
+    @staticmethod
+    def _get_goal(perception):
+        return list(map(lambda x: [x[1], x[0]], perception['terrain']['goal'])) if 'goal' in perception['terrain'] else []
 
