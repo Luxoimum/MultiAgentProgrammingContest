@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 from modules.planification_system import PlannerSystem
 from modules.action_calculator import ActionCalculator
+from functools import reduce
 import time
 
 
@@ -22,7 +23,7 @@ class AgentManager:
         self.step_id = None
         self.planner = PlannerSystem()
         self.action_planner = ActionCalculator()
-        self.time = False
+        self.time = True
 
         # Build debug directories
         f = open('debug/count.txt', 'r')
@@ -85,8 +86,8 @@ class AgentManager:
         self.time and print('[TIME] merge_maps: ', end - start)
         start = end
 
-        # Change data structures in order to improve the performance of planners
-        merged_maps = self._get_planner_data()
+        # Create global state by the processing of the unit states and merge maps
+        merged_maps = self._get_global_state()
         end = time.time()
         self.time and print('[TIME] change data structure: ', end - start)
         start = end
@@ -233,14 +234,14 @@ class AgentManager:
     def debugger(self, data_debug, selected_agents=None, quiet=True):
         self._debug_map(self.maps, data_debug, selected_agents, quiet)
 
-    def _get_planner_data(self, debug=False):
+    def _get_global_state(self, debug=False):
         map_ids = []
         merged_maps = {}
-        _id = 110
         for i, agent in enumerate(self.maps):
-            # Check if agent map does exist
+            # Get map id
             agent_map_id = id(self.maps[agent]['map'])
 
+            # Check if agent map does exist
             if agent_map_id in map_ids:
                 merged_maps[agent_map_id]['agents'].append((agent, self.maps[agent]['y'], self.maps[agent]['x']))
             else:
@@ -249,6 +250,8 @@ class AgentManager:
                 merged_maps[agent_map_id]['map'] = self.maps[agent]['map']
                 merged_maps[agent_map_id]['agents'] = [(agent, self.maps[agent]['y'], self.maps[agent]['x'])]
 
+            # Get obstacles and calculate map weights for interested elements
+            obstacles = np.where(self.maps[agent]['map'] == 10)
             if self.states[agent]['dispenser']:
                 for dispenser in self.states[agent]['dispenser']:
                     y = (self.maps[agent]['y'] + dispenser[0]) % 70
@@ -259,18 +262,19 @@ class AgentManager:
 
                     if dispenser[2] not in self.dispensers[agent_map_id]:
                         # Create empty map to store this dispenser
-                        empty_map = np.zeros((70, 70))
+                        empty_map = np.full((70, 70), np.nan)
 
                         # Update dispenser position
-                        empty_map[y, x] = _id
+                        empty_map[y, x] = 0
 
                         # Add new dispenser map
                         self.dispensers[agent_map_id][dispenser[2]] = empty_map
+                        self.dispensers[agent_map_id][dispenser[2]] = self._cost_calc(self.dispensers[agent_map_id][dispenser[2]], obstacles)
                     else:
                         # Store dispenser in map if doesnt exist
-                        if self.dispensers[agent_map_id][dispenser[2]][y, x] != _id:
-                            self.dispensers[agent_map_id][dispenser[2]][y, x] = _id
-                            self.dispensers[agent_map_id][dispenser[2]] = self._cost_calc(self.dispensers[agent_map_id][dispenser[2]], _id)
+                        if self.dispensers[agent_map_id][dispenser[2]][y, x] != 0:
+                            self.dispensers[agent_map_id][dispenser[2]][y, x] = 0
+                            self.dispensers[agent_map_id][dispenser[2]] = self._cost_calc(self.dispensers[agent_map_id][dispenser[2]], obstacles)
                 for dispenser in self.dispensers[agent_map_id]:
                     plt.imshow(self.dispensers[agent_map_id][dispenser])
                     plt.savefig(self.path + '/img/' + str(self.step_id) + '_' + agent + '_' + dispenser + '_' + '.png')
@@ -279,30 +283,32 @@ class AgentManager:
             if self.states[agent]['task_board']:
                 for task_board in self.states[agent]['task_board']:
                     if agent_map_id not in self.taskboards:
-                        self.taskboards[agent_map_id] = np.zeros((70, 70))
+                        self.taskboards[agent_map_id] = np.full((70, 70), np.nan)
 
                     # Update task_board position
                     y = (self.maps[agent]['y'] + task_board[0]) % 70
                     x = (self.maps[agent]['x'] + task_board[1]) % 70
-                    if self.taskboards[agent_map_id][y, x] != _id:
-                        self.taskboards[agent_map_id][y, x] = _id
-                        self.taskboards[agent_map_id] = self._cost_calc(self.taskboards[agent_map_id], _id)
+
+                    if self.taskboards[agent_map_id][y, x] != 0:
+                        self.taskboards[agent_map_id][y, x] = 0
+                        self.taskboards[agent_map_id] = self._cost_calc(self.taskboards[agent_map_id], obstacles)
                 plt.imshow(self.taskboards[agent_map_id])
                 plt.savefig(self.path + '/img/' + str(self.step_id) + '_' + agent + '_taskboards_' + '.png')
                 plt.cla()
 
+            # TODO: 1 new map per goal zone
             if self.states[agent]['goal']:
                 for position in self.states[agent]['goal']:
                     if agent_map_id not in self.goals:
-                        self.goals[agent_map_id] = np.zeros((70, 70))
+                        self.goals[agent_map_id] = np.full((70, 70), np.nan)
 
                     # Update goal position
                     y = (self.maps[agent]['y'] + position[0]) % 70
                     x = (self.maps[agent]['x'] + position[1]) % 70
-                    if self.goals[agent_map_id][y, x] != _id:
-                        self.goals[agent_map_id][y, x] = _id
+                    if self.goals[agent_map_id][y, x] != 0:
+                        self.goals[agent_map_id][y, x] = 0
 
-                self.goals[agent_map_id] = self._cost_calc(self.goals[agent_map_id], _id)
+                self.goals[agent_map_id] = self._cost_calc(self.goals[agent_map_id], obstacles)
                 plt.imshow(self.goals[agent_map_id])
                 plt.savefig(self.path + '/img/' + str(self.step_id) + '_' + agent + '_goal_' + '.png')
                 plt.cla()
@@ -404,23 +410,36 @@ class AgentManager:
                 plt.savefig('img/' + agent + '_map_' + str(number_of_renders[agent]) + '.png')
                 plt.cla()
 
-    @staticmethod
-    def _cost_calc(empty_map, element):
-        elements = np.where(empty_map == element)
-        elements = list(zip(elements[0], elements[1]))
-        paths = np.where(empty_map != element)
-        paths = list(zip(paths[0], paths[1]))
+    def _cost_calc(self, empty_map, obstacles):
+        # Create new map in order to the algorithm calculates the weight
         new_map = np.ndarray(shape=empty_map.shape)
         new_map[:] = empty_map[:]
-        for cell in paths:
-            distances = []
-            for element in elements:
-                if cell != element:
-                    distances.append(np.sqrt((cell[0] - element[0])**2 + (cell[1] - element[1])**2))
-            min_distance = min(distances)
-            new_map[cell] = min_distance
+        new_map[obstacles] = np.inf
+
+        # Get the position of elements to look for the calculation
+        elements = np.where(empty_map == 0)
+        elements = list(zip(elements[0], elements[1]))
+
+        w = 1
+        queue = reduce(lambda a, b: a + b, [self._get_neighbours(e, w) for e in elements])
+        while queue:
+            y, x, w = queue.pop()
+            new_map[y, x] = w
+
+            for neighbour in self._get_neighbours([y, x], w + 1):
+                if np.isnan(new_map[neighbour[0], neighbour[1]]):
+                    queue.append(neighbour)
 
         return new_map
+
+    @staticmethod
+    def _get_neighbours(position, wieght):
+        return [
+            [(position[0] + 1) % 70, position[1], wieght],
+            [(position[0] - 1) % 70, position[1], wieght],
+            [position[0], (position[1] + 1) % 70, wieght],
+            [position[0], (position[1] - 1) % 70, wieght],
+        ]
 
     @staticmethod
     def write_debug(file_name, text):
