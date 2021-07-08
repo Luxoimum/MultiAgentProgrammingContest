@@ -23,7 +23,7 @@ class AgentManager:
         self.step_id = None
         self.planner = PlannerSystem()
         self.action_planner = ActionCalculator()
-        self.time = True
+        self.time = False
 
         # Build debug directories
         f = open('debug/count.txt', 'r')
@@ -87,7 +87,7 @@ class AgentManager:
         start = end
 
         # Create global state by the processing of the unit states and merge maps
-        merged_maps = self._get_global_state()
+        merged_maps = self._get_global_state(True)
         end = time.time()
         self.time and print('[TIME] change data structure: ', end - start)
         start = end
@@ -118,7 +118,6 @@ class AgentManager:
             self.write_debug(file_name, '[STEP ' + str(self.step_id) + '] ' + a[0] + ' action: ' + a[1] + ' ' + str(a[2]) + '\n')
             self.write_debug(file_name, '======================\n')
 
-        # print('[ACTIONS]', actions)
         end = time.time()
         self.time and print('[TIME] get actions: ', end - start)
         start = end
@@ -128,11 +127,11 @@ class AgentManager:
             agent, perform_action, action_param = action
 
             if not self.states[agent]['perception']['disabled']:
-                if perform_action == 'move':
-                    available_params = self.exploration.get_available_cells(self.states[agent]['perception'])
-                    if available_params and action_param not in available_params:
-                        random_move = np.random.randint(len(available_params)) if available_params else 0
-                        action_param = available_params[random_move]
+                #if perform_action == 'move':
+                #    available_params = self.exploration.get_available_cells(self.states[agent]['perception'])
+                #    if available_params and action_param not in available_params:
+                #        random_move = np.random.randint(len(available_params)) if available_params else 0
+                #c        action_param = available_params[random_move]
 
                 self.agents[agent].action(self.step_id, perform_action, action_param)
 
@@ -151,6 +150,7 @@ class AgentManager:
                     relationship = 10000 + 100*abs(e[0]) + abs(e[1])
                     relationships[relationship] = [*relationships.get(relationship, []), (a, e)]
 
+        print('[MERGE MAPS]', relationships)
         # For each relationship try to synchronize pairs of agents
         for relationship in relationships:
             entities = relationships[relationship]
@@ -158,8 +158,10 @@ class AgentManager:
                 current = entities.pop(0)
                 for target in entities:
                     # If both entities are in the same map clean target from entities
-                    if self.maps[current[0]]['map'] is self.maps[target[0]]['map'] and len(entities) == 1:
-                        entities.remove(target)
+                    if self.maps[current[0]]['map'] is self.maps[target[0]]['map']:
+                        if len(entities) == 1:
+                            entities.remove(target)
+                        continue
                     else:
                         # Check if both agents are in the same perception
                         current_map = self.exploration.get_map(self.states[current[0]]['perception'])
@@ -171,7 +173,7 @@ class AgentManager:
                             target_position
                         )
                         if matched:
-                            print('[MANAGER ' + current[0] + '] match with ' + target[0])
+                            print('[MERGE MAPS ' + current[0] + ' ' + str(relationship) + '] match with ' + target[0])
                             # First of all clean target from entities
                             entities.remove(target)
 
@@ -275,10 +277,6 @@ class AgentManager:
                         if self.dispensers[agent_map_id][dispenser[2]][y, x] != 0:
                             self.dispensers[agent_map_id][dispenser[2]][y, x] = 0
                             self.dispensers[agent_map_id][dispenser[2]] = self._cost_calc(self.dispensers[agent_map_id][dispenser[2]], obstacles)
-                for dispenser in self.dispensers[agent_map_id]:
-                    plt.imshow(self.dispensers[agent_map_id][dispenser])
-                    plt.savefig(self.path + '/img/' + str(self.step_id) + '_' + agent + '_' + dispenser + '_' + '.png')
-                    plt.cla()
 
             if self.states[agent]['task_board']:
                 for task_board in self.states[agent]['task_board']:
@@ -292,9 +290,6 @@ class AgentManager:
                     if self.taskboards[agent_map_id][y, x] != 0:
                         self.taskboards[agent_map_id][y, x] = 0
                         self.taskboards[agent_map_id] = self._cost_calc(self.taskboards[agent_map_id], obstacles)
-                plt.imshow(self.taskboards[agent_map_id])
-                plt.savefig(self.path + '/img/' + str(self.step_id) + '_' + agent + '_taskboards_' + '.png')
-                plt.cla()
 
             # TODO: 1 new map per goal zone
             if self.states[agent]['goal']:
@@ -309,9 +304,26 @@ class AgentManager:
                         self.goals[agent_map_id][y, x] = 0
 
                 self.goals[agent_map_id] = self._cost_calc(self.goals[agent_map_id], obstacles)
-                plt.imshow(self.goals[agent_map_id])
-                plt.savefig(self.path + '/img/' + str(self.step_id) + '_' + agent + '_goal_' + '.png')
-                plt.cla()
+
+        # if Debug save figs about maps
+        if debug:
+            for agent_map_id in map_ids:
+                # dispensers
+                if agent_map_id in self.dispensers:
+                    for dispenser in self.dispensers[agent_map_id]:
+                        plt.imshow(self.dispensers[agent_map_id][dispenser])
+                        plt.savefig(self.path + '/img/_' + str(agent_map_id) + '_' + str(self.step_id) + '_' + dispenser + '_' + '.png')
+                        plt.cla()
+                # taskboards
+                if agent_map_id in self.taskboards:
+                    plt.imshow(self.taskboards[agent_map_id])
+                    plt.savefig(self.path + '/img/_' + str(agent_map_id) + '_' + str(self.step_id) + '_taskboards_' + '.png')
+                    plt.cla()
+                # goals
+                if agent_map_id in self.goals:
+                    plt.imshow(self.goals[agent_map_id])
+                    plt.savefig(self.path + '/img/_' + str(agent_map_id) + '_' + str(self.step_id) + '_goal_' + '.png')
+                    plt.cla()
 
         return merged_maps
 
@@ -418,17 +430,21 @@ class AgentManager:
 
         # Get the position of elements to look for the calculation
         elements = np.where(empty_map == 0)
+        new_map[elements] = 0
         elements = list(zip(elements[0], elements[1]))
 
-        w = 1
-        queue = reduce(lambda a, b: a + b, [self._get_neighbours(e, w) for e in elements])
+        queue = reduce(lambda a, b: a + b, [self._get_neighbours(e, 1) for e in elements])
+        unique_neighbours = set({})
         while queue:
-            y, x, w = queue.pop()
-            new_map[y, x] = w
+            y, x, w = queue.pop(0)
+            if np.isnan(new_map[y, x]):
+                new_map[y, x] = w
 
-            for neighbour in self._get_neighbours([y, x], w + 1):
-                if np.isnan(new_map[neighbour[0], neighbour[1]]):
-                    queue.append(neighbour)
+                for neighbour in self._get_neighbours([y, x], w + 1):
+                    key = 10000 + (neighbour[0]*100) + neighbour[1]
+                    if key not in unique_neighbours:
+                        unique_neighbours.add(key)
+                        queue.append(neighbour)
 
         return new_map
 

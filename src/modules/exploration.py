@@ -37,6 +37,22 @@ class Exploration:
 
         return perception_map
 
+    def get_goal_zone(self, perception):
+        goal = perception['terrain']['goal'] if 'goal' in perception['terrain'] else []
+        obstacles = perception['terrain']['obstacle'] if 'obstacle' in perception['terrain'] else []
+        perception_map = np.matrix(np.zeros((11, 11)))
+        perception_map = self._fill_diamond(perception_map)
+
+        # Obstacles in the view has 10 as its value
+        for i in range(len(obstacles)):
+            perception_map[obstacles[i][1]+5, obstacles[i][0]+5] = 10
+
+        # Goal zone int he view has 100 as its value
+        for i in range(len(goal)):
+            perception_map[goal[i][1]+5, goal[i][0]+5] = 100
+
+        return perception_map
+
     def get_available_cells(self, perception):
         perception_map = self.get_obstacles(perception)
 
