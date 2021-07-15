@@ -154,58 +154,59 @@ class AgentManager:
         # For each relationship try to synchronize pairs of agents
         for relationship in relationships:
             entities = relationships[relationship]
-            while entities:
-                current = entities.pop(0)
-                for target in entities:
-                    # If both entities are in the same map clean target from entities
-                    if self.maps[current[0]]['map'] is self.maps[target[0]]['map']:
-                        if len(entities) == 1:
-                            entities.remove(target)
-                        continue
-                    else:
-                        # Check if both agents are in the same perception
-                        current_map = self.exploration.get_map(self.states[current[0]]['perception'])
-                        target_map = self.exploration.get_map(self.states[target[0]]['perception'])
-                        target_position = target[1]
-                        matched = self._check_same_perception(
-                            current_map,
-                            target_map,
-                            target_position
-                        )
-                        if matched:
-                            print('[MERGE MAPS ' + current[0] + ' ' + str(relationship) + '] match with ' + target[0])
-                            # First of all clean target from entities
-                            entities.remove(target)
+            if len(entities) == 2:
+                while entities:
+                    current = entities.pop(0)
+                    for target in entities:
+                        # If both entities are in the same map clean target from entities
+                        if self.maps[current[0]]['map'] is self.maps[target[0]]['map']:
+                            if len(entities) == 1:
+                                entities.remove(target)
+                            continue
+                        else:
+                            # Check if both agents are in the same perception
+                            current_map = self.exploration.get_map(self.states[current[0]]['perception'])
+                            target_map = self.exploration.get_map(self.states[target[0]]['perception'])
+                            target_position = target[1]
+                            matched = self._check_same_perception(
+                                current_map,
+                                target_map,
+                                target_position
+                            )
+                            if matched:
+                                print('[MERGE MAPS ' + current[0] + ' ' + str(relationship) + '] match with ' + target[0])
+                                # First of all clean target from entities
+                                entities.remove(target)
 
-                            # Then store old position
-                            old_target_y = self.maps[target[0]]['y']
-                            old_target_x = self.maps[target[0]]['x']
-                            old_target_map = self.maps[target[0]]['map']
+                                # Then store old position
+                                old_target_y = self.maps[target[0]]['y']
+                                old_target_x = self.maps[target[0]]['x']
+                                old_target_map = self.maps[target[0]]['map']
 
-                            # Next update target agent
-                            self.maps[target[0]]['map'] = self.maps[current[0]]['map']
-                            self.maps[target[0]]['y'] = (self.maps[current[0]]['y'] + current[1][0]) % 70
-                            self.maps[target[0]]['x'] = (self.maps[current[0]]['x'] + current[1][1]) % 70
+                                # Next update target agent
+                                self.maps[target[0]]['map'] = self.maps[current[0]]['map']
+                                self.maps[target[0]]['y'] = (self.maps[current[0]]['y'] + current[1][0]) % 70
+                                self.maps[target[0]]['x'] = (self.maps[current[0]]['x'] + current[1][1]) % 70
 
-                            # And Subtract old position the new one
-                            old_target_y = old_target_y - self.maps[target[0]]['y']
-                            old_target_x = old_target_x - self.maps[target[0]]['x']
+                                # And Subtract old position the new one
+                                old_target_y = old_target_y - self.maps[target[0]]['y']
+                                old_target_x = old_target_x - self.maps[target[0]]['x']
 
-                            # Roll original target map in order to merge with current map
-                            target_map_to_merge = np.roll(old_target_map, old_target_y, axis=0)
-                            target_map_to_merge = np.roll(target_map_to_merge, old_target_x, axis=1)
+                                # Roll original target map in order to merge with current map
+                                target_map_to_merge = np.roll(old_target_map, old_target_y, axis=0)
+                                target_map_to_merge = np.roll(target_map_to_merge, old_target_x, axis=1)
 
-                            # Ignore cells with value = 0 in order to merge only valuable data
-                            mask_merge = target_map_to_merge > 0
+                                # Ignore cells with value = 0 in order to merge only valuable data
+                                mask_merge = target_map_to_merge > 0
 
-                            self.maps[current[0]]['map'][mask_merge] = target_map_to_merge[mask_merge]
+                                self.maps[current[0]]['map'][mask_merge] = target_map_to_merge[mask_merge]
 
-                            # Finally search agents with old map_id and substitute for new one and new position
-                            for a in self.maps:
-                                if self.maps[a]['map'] is old_target_map:
-                                    self.maps[a]['y'] = (self.maps[a]['y'] - old_target_y) % 70
-                                    self.maps[a]['x'] = (self.maps[a]['x'] - old_target_x) % 70
-                                    self.maps[a]['map'] = self.maps[current[0]]['map']
+                                # Finally search agents with old map_id and substitute for new one and new position
+                                for a in self.maps:
+                                    if self.maps[a]['map'] is old_target_map:
+                                        self.maps[a]['y'] = (self.maps[a]['y'] - old_target_y) % 70
+                                        self.maps[a]['x'] = (self.maps[a]['x'] - old_target_x) % 70
+                                        self.maps[a]['map'] = self.maps[current[0]]['map']
 
     def _update_map(self, agent, partial_map):
         map_shape = self.maps[agent]['map'].shape

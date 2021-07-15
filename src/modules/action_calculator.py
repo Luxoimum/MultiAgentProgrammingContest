@@ -40,11 +40,11 @@ class ActionCalculator:
                 elif task == self.s_taskboard:
                     actions.append(self._taskboard_transition(map_id, agent))
                 elif task == self.asemble_structure:
-                    actions.append(self._goal_transition(map_id, agent, task))
+                    actions.append(self._goal_transition_taskboard(map_id, agent))
                 elif task in [self.s_b0, self.s_b1, self.s_b2]:
                     if len(self.states[agent[0]]['attached']) > 0:
                         print('[ATTACHED] ' + agent[0], self.states[agent[0]]['attached'])
-                        actions.append(self._goal_transition(map_id, agent, task))
+                        actions.append(self._goal_transition_block(map_id, agent, task))
                     else:
                         actions.append(self._block_transition(map_id, agent, task))
                 else:
@@ -115,38 +115,114 @@ class ActionCalculator:
 
         return action
 
-    def _goal_transition(self, map_id, agent, action_type):
+    def _goal_transition_block(self, map_id, agent, action_type):
         name, y, x = agent
         if map_id in self.goals:
-            if self.goals[map_id][y, x] < 3:
-                if action_type == self.asemble_structure:
-                    perception_map = self.exploration.get_goal_zone(self.states[name]['perception'])
-                    goal_cells_in_perception = np.where(perception_map == 100)
-                    print('[ACTION GOALS ASSEMBLE] ', goal_cells_in_perception, perception_map[5, 5] == 100)
-                    # Look up for blocks in the perception
-                    block_position = None
-                    entity_presence = False
-                    for thing in self.states[name]['perception']['things']:
-                        if thing['type'] == 'block':
-                            block_position = [thing['y'], thing['x']]
-                        if thing['type'] == 'entity' and thing['y'] != 0 and thing['x'] != 0:
-                            entity_presence = True
-                    if len(self.states[name]['attached']) == 0:
-                        # If block close to goal zone, walk to it
-                        if block_position and not entity_presence:
-                            print('[ACTION GOALS ASSEMBLE ATTACHED]', self.states[name]['attached'])
-                            if abs(sum(block_position)) == 1:
-                                param = self._get_position_of_block(block_position)
-                                print('[ACTION GOALS ASSEMBLE BLOCK PARAM]', param)
-                                action = (name, 'attach', param)
+            if self.goals[map_id][y, x] <= 4:
+                perception_map = self.exploration.get_goal_zone(self.states[name]['perception'])
+                goal_cells_in_perception = np.where(perception_map == 100)
+
+                if perception_map[5, 5] == 100:
+                    attached = self.states[name]['attached'][0]
+                    attached = [attached[1], attached[0]]
+                    param = self._get_position_of_block(attached)
+                    action = (name, 'detach', param)
+                else:
+                    # Get into the goal zone by using wavefront algorithm
+                    move_selected = self._get_movement_from_perception(agent, goal_cells_in_perception, True)
+                    # Perform movement
+                    action = (name, 'move', move_selected)
+
+                """
+                position_target_cell = self._set_block_in_goal(action_type, map_id, name)
+                position_required = [position_target_cell[0] - y, position_target_cell[1] - x]
+                print('[GOAL BLOCK] check position required', name, position_required)
+
+                if abs(sum(position_required)) == 1 and (position_required[0] == 0 or position_required[1] == 0):
+                    print('DETACHING MODE', position_required)
+                    # Try detach: get coordinate from position required, then try detach
+                    # if no detach rotate and try again till success the process
+                    last_action_result = self.states[name]['perception']['lastActionResult']
+                    if last_action_result == 'failed_parameter' or last_action_result == 'failed_target':
+                        action = (name, 'rotate', 'cw')
+                    else:
+                        
+                else:
+                    # Calculate the distance from n,s,e,w to target possition to decide a movement
+                    move_selected = self._get_movement_from_perception(agent, position_required)
+                    # Perform movement
+                    action = (name, 'move', move_selected)
+                    """
+            else:
+                param = self._get_movement_from_map(self.goals[map_id], agent)
+                param = self._get_available_movement(self.states[name]['perception'], param)
+                print('[GOAL BLOCK] check param', name, self.goals[map_id][y, x], param)
+                action = (name, 'move', param)
+        else:
+            action = self.default_action(name)
+
+        return action
+
+    def _goal_transition_taskboard(self, map_id, agent):
+        name, y, x = agent
+        if map_id in self.goals:
+            if self.goals[map_id][y, x] < 4:
+                perception_map = self.exploration.get_goal_zone(self.states[name]['perception'])
+                goal_cells_in_perception = np.where(perception_map == 100)
+
+                # Look up for blocks in the perception
+                block_position = None
+                entity_presence = False
+                for thing in self.states[name]['perception']['things']:
+                    if thing['type'] == 'block':
+                        block_position = [thing['y'], thing['x']]
+                    if thing['type'] == 'entity':
+                        print('[ACTION GOALS ASSEMBLE] entity', thing['y'], thing['x'], thing['y'] != 0 or thing['x'] != 0)
+                        entity_presence = thing['y'] != 0 or thing['x'] != 0
+
+                print('[ACTION GOALS ASSEMBLE] check entity presence', entity_presence, self.states[name]['perception']['things'])
+                if not block_position or entity_presence:
+                    if self.goals[map_id][y, x] == 0:
+                        # Grid search for the center of the goal zone
+                        grid = [[-1, 0, 'n'], [1, 0, 's'], [0, 1, 'e'], [0, -1, 'w']]
+                        param = None
+                        free_cells = 0
+                        while grid:
+                            position = grid.pop(0)
+                            if perception_map[position[0] + 5, position[1] + 5] == 100:
+                                param = position[2]
                             else:
-                                # Get closer to the side of the block by using wavefront algorithm
-                                move_selected = self._get_movement_from_perception(agent, block_position)
-                                # Perform movement
-                                action = (name, 'move', move_selected)
+                                free_cells += 1
+
+                        if param and free_cells > 0:
+                            action = (name, 'move', param)
                         else:
                             # Wait for interaction with other agents or blocks
                             action = (name, 'skip', None)
+                    else:
+                        # Get into the goal zone by using wavefront algorithm
+                        move_selected = self._get_movement_from_perception(agent, goal_cells_in_perception, True)
+                        # Perform movement
+                        action = (name, 'move', move_selected)
+                else:
+                    # Check if agent has an agent attached
+                    attached = None
+                    for attached_thing in self.states[name]['attached']:
+                        attached = abs(sum(attached_thing)) == 1 and (attached_thing[0] == 0 or attached_thing[1] == 0)
+
+                    print('[ACTION GOALS ASSEMBLE] check attached block', attached, self.states[name]['attached'])
+                    if not attached:
+                        # Walk to the block and attach it
+                        print('[ACTION GOALS ASSEMBLE] check block position', block_position)
+                        if abs(sum(block_position)) == 1 and (block_position[0] == 0 or block_position[1] == 0):
+                            param = self._get_position_of_block(block_position)
+                            print('[ACTION GOALS ASSEMBLE] check attach param', param)
+                            action = (name, 'attach', param)
+                        else:
+                            # Get closer to the side of the block by using wavefront algorithm
+                            move_selected = self._get_movement_from_perception(agent, block_position)
+                            # Perform movement
+                            action = (name, 'move', move_selected)
                     elif perception_map[5, 5] == 100:
                         # Grid search for the center of the goal zone
                         grid = [[-1, 0, 'n'], [1, 0, 's'], [0, 1, 'e'], [0, -1, 'w']]
@@ -158,35 +234,18 @@ class ActionCalculator:
                                 param = position[2]
                             else:
                                 free_cells += 1
+
                         if param and free_cells > 0:
                             action = (name, 'move', param)
                         else:
                             print('[ACTION GOALS ASSEMBLE SUBMIT]', self.states[name]['task'])
-                            action = (name, 'submit', self.states[name]['task'])
+                            if self.states[name]['perception']['lastActionResult'] == 'success':
+                                action = (name, 'submit', self.states[name]['task'])
+                            else:
+                                action = (name, 'rotate', 'cw')
                     else:
                         # Get into the goal zone by using wavefront algorithm
                         move_selected = self._get_movement_from_perception(agent, goal_cells_in_perception, True)
-                        # Perform movement
-                        action = (name, 'move', move_selected)
-                else:
-                    position_target_cell = self._set_block_in_goal(action_type, map_id, name)
-                    position_required = [position_target_cell[0] - y, position_target_cell[1] - x]
-                    print('[GOAL BLOCK] ', name, position_required)
-                    if abs(sum(position_required)) == 1:
-                        print('DETACHING MODE', position_required)
-                        # Try detach: get coordinate from position required, then try detach
-                        # if no detach rotate and try again till success the process
-                        last_action_result = self.states[name]['perception']['lastActionResult']
-                        if last_action_result == 'failed_parameter' or last_action_result == 'failed_target':
-                            action = (name, 'rotate', 'cw')
-                        else:
-                            attached = self.states[name]['attached'][0]
-                            attached = [attached[1], attached[0]]
-                            param = self._get_position_of_block(attached)
-                            action = (name, 'detach', param)
-                    else:
-                        # Calculate the distance from n,s,e,w to target possition to decide a movement
-                        move_selected = self._get_movement_from_perception(agent, position_required)
                         # Perform movement
                         action = (name, 'move', move_selected)
             else:
@@ -288,7 +347,7 @@ class ActionCalculator:
         if current_movement and current_movement in available_params:
             return current_movement
 
-        return available_params[np.random.randint(len(available_params))]
+        return available_params[np.random.randint(len(available_params))] if len(available_params) > 0 else None
 
     def _get_movement_from_perception(self, agent, position_required, multiple_target=False):
         name, y, x = agent

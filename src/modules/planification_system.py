@@ -62,7 +62,7 @@ class PlannerSystem:
                 # Check if agent has a task assigned
                 if agent[0] in self.task_assigned and self.task_assigned[agent[0]]:
                     task_name = self.task_assigned[agent[0]]
-                    # If task is completed and store a new task into tasks_available
+                    # If task is completed store a new task into tasks_available
                     self.evaluate_task(agent[0], map_id, task_name)
                 else:
                     self.task_assigned[agent[0]] = None
@@ -85,12 +85,12 @@ class PlannerSystem:
     def evaluate_task(self, agent, map_id, task_type):
         tasks = {
             'skip': lambda _, __: True,
-            'b0': lambda ag, _: len(self.states[ag]['goal']) > 0 and len(self.states[ag]['attached']) == 0,
-            'b1': lambda ag, _: len(self.states[ag]['goal']) > 0 and len(self.states[ag]['attached']) == 0,
-            'b2': lambda ag, _: len(self.states[ag]['goal']) > 0 and len(self.states[ag]['attached']) == 0,
-            'taskboard': lambda ag, _: self.states[ag]['task'],
+            'b0': lambda ag, _: len(self.states[ag]['goal']) > 0 and len(self.states[ag]['attached']) == 0 and self.evaluate_block(agent, task_type),
+            'b1': lambda ag, _: len(self.states[ag]['goal']) > 0 and len(self.states[ag]['attached']) == 0 and self.evaluate_block(agent, task_type),
+            'b2': lambda ag, _: len(self.states[ag]['goal']) > 0 and len(self.states[ag]['attached']) == 0 and self.evaluate_block(agent, task_type),
+            'taskboard': lambda ag, _: self.states[ag]['perception']['lastAction'] == 'accept' and self.states[ag]['task'],
             'goal': lambda _, m_id: m_id in self.goals,
-            'asemble_structure': lambda ag, _: False
+            'asemble_structure': lambda ag, _: self.states[ag]['perception']['lastAction'] == 'submit' and self.states[ag]['perception']['lastActionResult'] == 'success'
         }
         if tasks[task_type](agent, map_id):
             if task_type == self.s_taskboard:
@@ -107,8 +107,16 @@ class PlannerSystem:
                 self.parse_meta(selected_task, map_id)
             elif task_type == self.asemble_structure:
                 self.available_tasks[map_id].append(self.s_taskboard)
+                self.task_assigned[agent] = None
             else:
                 self.task_assigned[agent] = None
+
+    def evaluate_block(self, agent, block_type):
+        is_block = False
+        for thing in self.states[agent]['perception']['things']:
+            if thing['type'] == 'block':
+                is_block = thing['details'] == block_type
+        return is_block
 
     def assign_task(self, map_id):
         agents = [agent for agent in self.maps[map_id]['agents']]
